@@ -221,7 +221,8 @@ static const hdlc_frame_sink LINE_SINK =
     on_line_byte,
     on_line_end,
     on_line_abort,
-    on_line_discard
+    on_line_discard,
+    NULL            /* on_frame: HDLCGW uses per-byte mode, no buffer set */
 };
 
 /**

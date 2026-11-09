@@ -1,136 +1,266 @@
+/**************************************************************************
+** HDLC - bit-level HDLC/SDLC framing                                    **
+**                                                                       **
+** Bit stuffing on transmit; bit un-stuffing, flag and abort detection   **
+** on receive; CRC-16/IBM-SDLC frame check. Nothing here depends on      **
+** Arduino or FreeRTOS, so it can be unit tested on a PC.                **
+**                                                                       **
+** Wire convention (same as the SPI link and as Mattis Lind's            **
+** SDLCBridge): bits go out LSB first. A byte handed to the encoder is   **
+** walked from bit 0 to bit 7; the output byte is built by shifting      **
+** RIGHT and setting bit 7, so the first bit put on the wire ends up in  **
+** bit 0 of the output byte. The SPI peripheral must run LSBFIRST.       **
+**                                                                       **
+** Logic taken from SDLCBridge.ino (MattisLind/alfaskop_emu,             **
+** Utils/SDLCBridge), proven against a real IBM SDLC terminal (Informer  **
+** 213) and an Intel 8274 board. Two details from that work are kept on  **
+** purpose:                                                              **
+**  - a stuffed zero IS inserted when five ones precede the closing      **
+**    flag, although the flag itself starts with a zero. Without it the  **
+**    terminal rejected every frame whose last FCS byte ended in 11111.  **
+**  - after a flag the receive bit counter is cleared, so byte alignment **
+**    on the wire does not matter. Frames may start on any bit of an SPI **
+**    byte.                                                              **
+**                                                                       **
+** Ronny Hansen                                                          **
+***************************************************************************/
 #ifndef HDLC_H
 #define HDLC_H
 
-#include <Arduino.h>
+#include <stdint.h>
+#include <stdbool.h>
 
+/**
+ * @name CRC-16/IBM-SDLC (also called CRC-16/X-25)
+ * Poly 0x1021 reflected (0x8408), init 0xFFFF, bits fed LSB first, result
+ * inverted before sending. Running the CRC over a good frame INCLUDING its
+ * two FCS bytes leaves HDLC_CRC_GOOD in the register.
+ * @{
+ */
+#define HDLC_CRC_INIT 0xFFFFu   /**< starting value of the CRC register */
+#define HDLC_CRC_GOOD 0xF0B8u   /**< residue after a good frame plus FCS */
+/** @} */
 
-enum HDLCReceiveState 
+#define HDLC_FLAG  0x7Eu    /**< 01111110, frame delimiter */
+#define HDLC_ABORT 0x7Fu    /**< 01111111, seven ones */
+#define HDLC_IDLE  0xFFu    /**< marking line, nothing sent */
+
+/**
+ * @brief One CRC step over one byte.
+ * @param[in] crc   Current CRC register.
+ * @param[in] data  Next frame byte.
+ * @return Updated CRC register.
+ */
+uint16_t hdlc_crc_byte(uint16_t crc, uint8_t data);
+
+/* ------------------------------------------------------------ encoder */
+
+/**
+ * @brief Turns frame bytes into the bit-stuffed byte stream for the line.
+ *
+ * Use: hdlc_encoder_open() once, hdlc_encoder_write() for every byte of
+ * address, control, data and FCS, then hdlc_encoder_close(). Every call
+ * fills the caller's output buffer and returns how many bytes it produced:
+ * 0, 1 or 2, never more, because one input byte adds at most 8 data bits
+ * plus 2 stuffed zeros. The caller pushes those bytes to the transmit ring
+ * buffer. Not thread safe; one encoder per sending task.
+ */
+typedef struct
 {
-    HDLC_STATE_IDLE,            // Waiting for the start of a frame
-    HDLC_STATE_FLAG_DETECTED,   // Detected the HDLC start flag (0x7E)
-    HDLC_WAITING_FOR_SYN2,      // CCP/BISYNC
-    HDLC_STATE_RECEIVING_DATA,  // Receiving the data portion of the frame    
-    HDLC_STATE_CRC_CALC,        // Calculating/Verifying the CRC
-    HDLC_STATE_FRAME_COMPLETE,  // Frame fully received and CRC verified
-    HDLC_STATE_ERROR            // Error encountered, such as a CRC failure
-};
+    uint8_t shifter;    /**< output byte being built, filled from bit 7 down */
+    int bit_count;      /**< bits in shifter, 0..7 */
+    int one_count;      /**< ones in a row sent so far, 0..5 */
+    uint16_t crc;       /**< running CRC over the bytes written */
+} hdlc_encoder;
 
+/**
+ * @brief Return an encoder to the idle state. Pending bits are discarded.
+ * @param[out] enc  Encoder; must not be NULL.
+ */
+void hdlc_encoder_reset(hdlc_encoder *enc);
 
+/**
+ * @brief Write the opening flag and start a frame.
+ *
+ * The flag is always byte aligned because close/abort reset the bit
+ * counter. Also restarts the running CRC.
+ *
+ * @param[in,out] enc  Encoder; must not be NULL.
+ * @param[out]    out  Receives the line bytes; room for 2.
+ * @return Number of bytes written to out (always 1).
+ */
+int hdlc_encoder_open(hdlc_encoder *enc, uint8_t *out);
 
-enum SDLC_PROTOCOL
+/**
+ * @brief Write one frame byte, bit stuffed. Updates the running CRC.
+ * @param[in,out] enc   Encoder; must not be NULL.
+ * @param[in]     data  Frame byte (address, control, data or FCS).
+ * @param[out]    out   Receives the line bytes; room for 2.
+ * @return Number of bytes written to out, 0..2.
+ */
+int hdlc_encoder_write(hdlc_encoder *enc, uint8_t data, uint8_t *out);
+
+/**
+ * @brief Write the two FCS bytes for everything written since open.
+ *
+ * The FCS is the inverted CRC, low byte first. Use only when the frame does
+ * not already carry an FCS.
+ *
+ * @param[in,out] enc  Encoder; must not be NULL.
+ * @param[out]    out  Receives the line bytes; room for 4.
+ * @return Number of bytes written to out, 2..4.
+ */
+int hdlc_encoder_write_fcs(hdlc_encoder *enc, uint8_t *out);
+
+/**
+ * @brief Write the closing flag and end the frame.
+ *
+ * A stuffed zero is inserted first if five ones are pending. Residual bits
+ * are followed by the flag bits and then padded with idle ones to a whole
+ * byte. Leaves the encoder reset, so the next open is byte aligned.
+ *
+ * @param[in,out] enc  Encoder; must not be NULL.
+ * @param[out]    out  Receives the line bytes; room for 2.
+ * @return Number of bytes written to out, 1..2.
+ */
+int hdlc_encoder_close(hdlc_encoder *enc, uint8_t *out);
+
+/**
+ * @brief Write an abort sequence (seven ones) instead of a closing flag.
+ * @param[in,out] enc  Encoder; must not be NULL.
+ * @param[out]    out  Receives the line bytes; room for 2.
+ * @return Number of bytes written to out, 1..2.
+ */
+int hdlc_encoder_abort(hdlc_encoder *enc, uint8_t *out);
+
+/* ------------------------------------------------------------ decoder */
+
+/**
+ * @brief Where hdlc_decoder_feed() delivers frames.
+ *
+ * The callbacks run on the caller's task, inside hdlc_decoder_feed().
+ * ctx is passed back unchanged.
+ */
+typedef struct
 {
-  PROTOCOL_BOP,             //		PROTO = 0 BOP (Bit Oriented Protocols: SDLC, HDLC, ADCCP)
-	PROTOCOL_CCP,             //		PROTO = 1 CCP (Control Character Protocols: BiSync, DDCMP)
-};
+    /** Handed to every callback unchanged. */
+    void *ctx;
+    /** One un-stuffed frame byte, in order. The FCS bytes come last. */
+    void (*on_byte)(void *ctx, uint8_t data);
+    /** Closing flag after at least one byte. crc_good is true when the CRC
+     *  over all delivered bytes (FCS included) left HDLC_CRC_GOOD. */
+    void (*on_end)(void *ctx, bool crc_good);
+    /** Seven or more ones inside a frame; the frame is dropped. */
+    void (*on_abort)(void *ctx);
+    /** The bytes delivered since the last flag were fewer than
+     *  HDLC_MIN_FRAME_BYTES and are not a frame: forget them, count nothing.
+     *  Without this the sink kept a padding byte and the next frame arrived
+     *  with it stuck on the front (bench 2026-11-08, 91 of 155 frames). */
+    void (*on_discard)(void *ctx);
+} hdlc_frame_sink;
 
-
-
-class HDLC
+/**
+ * @brief Pulls frames out of the raw byte stream read from the line.
+ *
+ * Not thread safe; one decoder per receiving task.
+ */
+typedef struct
 {
+    bool active;        /**< opening flag seen, collecting bits */
+    bool have_data;     /**< at least one byte delivered for this frame */
+    int byte_count;     /**< bytes delivered for this frame */
+    uint8_t shifter;    /**< input byte being built, filled from bit 7 down */
+    int bit_count;      /**< bits in shifter, 0..7 */
+    int one_count;      /**< ones in a row seen so far, capped at 8 */
+    uint16_t crc;       /**< running CRC over the bytes delivered */
+    uint32_t short_frames;  /**< flag-to-flag runs of 1..3 bytes, ignored (see feed) */
+} hdlc_decoder;
 
-public:
-    HDLC();
+/** Shortest run between two flags that counts as a frame: address, control
+ *  and FCS = 32 bits (ISO 13239 4.3.3, "invalid frame" rule; SDLC says the
+ *  same). Anything shorter is ignored, not counted as a bad frame. */
+#define HDLC_MIN_FRAME_BYTES 4
 
-    // Clear frame/Reset frame
-    void Clear();
+/**
+ * @brief Return a decoder to the idle, waiting-for-flag state.
+ * @param[out] dec  Decoder; must not be NULL.
+ */
+void hdlc_decoder_reset(hdlc_decoder *dec);
 
+/**
+ * @brief Feed one byte as read from the SPI (LSB first on the wire).
+ *
+ * Idle bytes (0xFF) outside a frame return at once. Inside a frame every
+ * bit is examined; callbacks fire from here.
+ *
+ * Runs of fewer than HDLC_MIN_FRAME_BYTES between two flags are dropped in
+ * silence and counted in short_frames. They happen whenever one frame
+ * follows another directly: the transmitter pads the byte after the closing
+ * flag with 1..7 idle ones, and those plus the next opening flag make 8 or
+ * more bits, which this decoder would otherwise deliver as a one-byte frame
+ * with a bad FCS. Seen on the bench 2026-11-08: 1339 such phantoms in 5521
+ * real frames, every real frame good.
+ *
+ * @param[in,out] dec   Decoder; must not be NULL.
+ * @param[in]     data  Byte from the line.
+ * @param[in]     sink  Callbacks for frame bytes and frame ends; must not be
+ *                      NULL and all four function pointers must be set.
+ */
+void hdlc_decoder_feed(hdlc_decoder *dec, uint8_t data, const hdlc_frame_sink *sink);
 
-    // Create a dummy frame for sending (HDLC, binary)
-    void CreateDummyFrame();
+/* ------------------------------------------------------ control field */
 
-    // Create a dummy frame for sending (Character Protocol, give your own frame flag)
-    void CreateDummyCCPFrame(uint8_t flag);
+/** @brief The three HDLC frame classes, told apart by the low control bits. */
+typedef enum
+{
+    HDLC_FRAME_UNKNOWN,     /**< could not classify (never happens for 8-bit control) */
+    HDLC_FRAME_I,           /**< information: bit 0 = 0, carries N(S) and N(R) */
+    HDLC_FRAME_S,           /**< supervisory: bits 1..0 = 01, carries N(R) */
+    HDLC_FRAME_U            /**< unnumbered: bits 1..0 = 11, M1 and M2 name the type */
+} hdlc_frame_type;
 
-   // Enable CCP protocol (Bisync) typical the synchar is 0x16
-    void EnableCCP(uint8_t synChar);
+/**
+ * @brief A decoded 8-bit (modulo 8) control field, as the DECODE, F and
+ *        INSPECT console commands print it. Same layout and names as the
+ *        RC422Dev console so both gateways read alike.
+ */
+typedef struct
+{
+    hdlc_frame_type type;       /**< I, S or U */
+    int ns;                     /**< N(S), I frames only, bits 3..1 */
+    int nr;                     /**< N(R), I and S frames, bits 7..5 */
+    int m1;                     /**< U frames: bits 3..2 */
+    int m2;                     /**< U frames: bits 7..5 */
+    bool poll_final;            /**< bit 4, P/F */
+    const char *name;           /**< short type name: RR, SABM, UA, ... "" for I */
+    const char *description;    /**< one-line meaning of name */
+} hdlc_control_field;
 
-    // Creating a frame from received data
-    void ReceiveByte(const uint8_t data);
+/**
+ * @brief Decode a control byte (modulo 8 numbering, ISO 13239 5.4).
+ *
+ * U-frame types are found by M1/M2 in a table shared with RC422Dev; the
+ * first match wins where a command and a response share the bits (UI, XID,
+ * TEST, DM/SARM). Unknown M1/M2 pairs decode as "UNKNOWN".
+ *
+ * @param[in] control  The control byte, normally the second byte of a frame.
+ * @return The decoded fields; name and description point at static strings.
+ */
+hdlc_control_field hdlc_decode_control(uint8_t control);
 
-    int Lenght(void);
-    uint8_t GetFrameByte(int pos);
-    HDLCReceiveState GetState(void);
+/**
+ * @brief One-letter class name.
+ * @param[in] type  Frame class.
+ * @return "I", "S", "U" or "?".
+ */
+const char *hdlc_frame_type_name(hdlc_frame_type type);
 
-    // Creating a frame for Sending
-    void frameOpen();
-    void frameWrite(const uint8_t _b);
-    uint16_t frameClose();
-    uint8_t poll();
-    uint8_t getMsg(const uint8_t position);
+/**
+ * @brief Long class name.
+ * @param[in] type  Frame class.
+ * @return "Information Frame", "Supervisory Frame", "Unnumbered Frame" or
+ *         "Unknown Frame".
+ */
+const char *hdlc_frame_type_description(hdlc_frame_type type);
 
-
-    SDLC_PROTOCOL protocol;
-
-private:
-    static constexpr uint8_t  HDLC_FLAG = (0x7e);
-    static constexpr uint8_t  HDLC_ESCAPE = (0x7d);
-    static constexpr uint8_t  HDLC_FLAG_ESC = (0x5e);
-    static constexpr uint8_t  HDLC_ESCAPE_ESC = (0x5d);
-    static constexpr uint8_t  HDLC_ESCAPE_MASK = (0x20);
-    static constexpr uint16_t HDLC_CRCINIT = (0xffff);
-    static constexpr uint16_t HDLC_CRCGOOD = (0xf0b8);
-    static constexpr uint16_t HDLC_MAX_FRAME_LENGTH = (128);
-    static constexpr uint16_t HDLC_INPUT_BUFFER_SIZE = (HDLC_MAX_FRAME_LENGTH);
-
-    static constexpr uint8_t STX = 0x02; // Start of text
-    static constexpr uint8_t ETX = 0x03; // End of text
-
- 
-    inline static constexpr uint16_t hdlc_fcstab[256] = 
-    {
-      0x0000, 0x1189, 0x2312, 0x329b, 0x4624, 0x57ad, 0x6536, 0x74bf,
-      0x8c48, 0x9dc1, 0xaf5a, 0xbed3, 0xca6c, 0xdbe5, 0xe97e, 0xf8f7,
-      0x1081, 0x0108, 0x3393, 0x221a, 0x56a5, 0x472c, 0x75b7, 0x643e,
-      0x9cc9, 0x8d40, 0xbfdb, 0xae52, 0xdaed, 0xcb64, 0xf9ff, 0xe876,
-      0x2102, 0x308b, 0x0210, 0x1399, 0x6726, 0x76af, 0x4434, 0x55bd,
-      0xad4a, 0xbcc3, 0x8e58, 0x9fd1, 0xeb6e, 0xfae7, 0xc87c, 0xd9f5,
-      0x3183, 0x200a, 0x1291, 0x0318, 0x77a7, 0x662e, 0x54b5, 0x453c,
-      0xbdcb, 0xac42, 0x9ed9, 0x8f50, 0xfbef, 0xea66, 0xd8fd, 0xc974,
-      0x4204, 0x538d, 0x6116, 0x709f, 0x0420, 0x15a9, 0x2732, 0x36bb,
-      0xce4c, 0xdfc5, 0xed5e, 0xfcd7, 0x8868, 0x99e1, 0xab7a, 0xbaf3,
-      0x5285, 0x430c, 0x7197, 0x601e, 0x14a1, 0x0528, 0x37b3, 0x263a,
-      0xdecd, 0xcf44, 0xfddf, 0xec56, 0x98e9, 0x8960, 0xbbfb, 0xaa72,
-      0x6306, 0x728f, 0x4014, 0x519d, 0x2522, 0x34ab, 0x0630, 0x17b9,
-      0xef4e, 0xfec7, 0xcc5c, 0xddd5, 0xa96a, 0xb8e3, 0x8a78, 0x9bf1,
-      0x7387, 0x620e, 0x5095, 0x411c, 0x35a3, 0x242a, 0x16b1, 0x0738,
-      0xffcf, 0xee46, 0xdcdd, 0xcd54, 0xb9eb, 0xa862, 0x9af9, 0x8b70,
-      0x8408, 0x9581, 0xa71a, 0xb693, 0xc22c, 0xd3a5, 0xe13e, 0xf0b7,
-      0x0840, 0x19c9, 0x2b52, 0x3adb, 0x4e64, 0x5fed, 0x6d76, 0x7cff,
-      0x9489, 0x8500, 0xb79b, 0xa612, 0xd2ad, 0xc324, 0xf1bf, 0xe036,
-      0x18c1, 0x0948, 0x3bd3, 0x2a5a, 0x5ee5, 0x4f6c, 0x7df7, 0x6c7e,
-      0xa50a, 0xb483, 0x8618, 0x9791, 0xe32e, 0xf2a7, 0xc03c, 0xd1b5,
-      0x2942, 0x38cb, 0x0a50, 0x1bd9, 0x6f66, 0x7eef, 0x4c74, 0x5dfd,
-      0xb58b, 0xa402, 0x9699, 0x8710, 0xf3af, 0xe226, 0xd0bd, 0xc134,
-      0x39c3, 0x284a, 0x1ad1, 0x0b58, 0x7fe7, 0x6e6e, 0x5cf5, 0x4d7c,
-      0xc60c, 0xd785, 0xe51e, 0xf497, 0x8028, 0x91a1, 0xa33a, 0xb2b3,
-      0x4a44, 0x5bcd, 0x6956, 0x78df, 0x0c60, 0x1de9, 0x2f72, 0x3efb,
-      0xd68d, 0xc704, 0xf59f, 0xe416, 0x90a9, 0x8120, 0xb3bb, 0xa232,
-      0x5ac5, 0x4b4c, 0x79d7, 0x685e, 0x1ce1, 0x0d68, 0x3ff3, 0x2e7a,
-      0xe70e, 0xf687, 0xc41c, 0xd595, 0xa12a, 0xb0a3, 0x8238, 0x93b1,
-      0x6b46, 0x7acf, 0x4854, 0x59dd, 0x2d62, 0x3ceb, 0x0e70, 0x1ff9,
-      0xf78f, 0xe606, 0xd49d, 0xc514, 0xb1ab, 0xa022, 0x92b9, 0x8330,
-      0x7bc7, 0x6a4e, 0x58d5, 0x495c, 0x3de3, 0x2c6a, 0x1ef1, 0x0f78
-    };
-
-    HDLCReceiveState currentState = HDLC_STATE_IDLE;
-    uint16_t crc16;
-    uint8_t  msg_now, msg_received, msg[HDLC_INPUT_BUFFER_SIZE];
-
-    uint16_t crcIteration(const uint16_t crc, const uint8_t _b);
-    
-    uint8_t protocol_flag = HDLC_FLAG;
-    int bitCount = 0;
-    uint8_t frameByte = 0;
-    uint8_t msg_ptr = 0;
-    int oneCounter  =0;
-    int frameCount = 0;
-
-    void ReceiveBit(uint8_t bit);
-    void AddToFrame(uint8_t data);
-
-    
-};
-
-extern HDLC hdlc;
-
-#endif
+#endif /* HDLC_H */

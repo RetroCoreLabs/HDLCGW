@@ -5,7 +5,7 @@
 ** Ronny Hansen                                                          **
 ***************************************************************************/
 #include "usb_tx_task.h"
-#include "hot_path.h"
+#include "libhdlc/hot_path.h"
 
 #include <Arduino.h>
 #include <esp32-hal-tinyusb.h>

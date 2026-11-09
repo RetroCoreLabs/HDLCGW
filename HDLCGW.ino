@@ -27,6 +27,10 @@
 ** Ronny Hansen                                                          **
 ***************************************************************************/
 #include <Arduino.h>
+/* The shared line code (HDLC framing, host framing, control frames, ring
+ * buffer) lives in the libhdlc Arduino library. Included first so the IDE
+ * finds it before any file below needs one of its headers. */
+#include <libhdlc.h>
 
 #include "console_out.h"
 #include "console_task.h"

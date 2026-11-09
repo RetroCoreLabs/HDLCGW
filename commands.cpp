@@ -24,10 +24,10 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 
-#include "byte_frame.h"
+#include "libhdlc/byte_frame.h"
 #include "console_out.h"
 #include "console_task.h"
-#include "hdlc.h"
+#include "libhdlc/hdlc.h"
 #include "spi_rx_task.h"
 #include "spi_tx_task.h"
 #include "usb_tx_task.h"

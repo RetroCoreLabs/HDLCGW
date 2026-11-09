@@ -35,7 +35,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "control_frame.h"
+#include "libhdlc/control_frame.h"
 
 /** Longest REPLY payload per frame. Two of these plus line traffic fit in
  *  the 16 KB USB ring with room to spare; the full 1018 would be legal. */

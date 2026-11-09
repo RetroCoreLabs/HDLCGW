@@ -13,7 +13,7 @@
 #define SPI_TX_TASK_H
 
 #include <stdint.h>
-#include "ring_buffer.h"
+#include "libhdlc/ring_buffer.h"
 
 extern ring_buffer g_tx_buffer;   /**< bit-stuffed bytes waiting for the line */
 

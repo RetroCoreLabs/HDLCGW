@@ -24,7 +24,7 @@
 #define SPI_RX_TASK_H
 
 #include <stdint.h>
-#include "ring_buffer.h"
+#include "libhdlc/ring_buffer.h"
 
 extern ring_buffer g_rx_buffer;   /**< raw bytes read from the line */
 

@@ -275,14 +275,26 @@ spi_tx 8, console 2, usb_tx 1, WiFi 1.
   the `hdlc-loopback` traffic tool from the `HdlcGatewayTest` repository, two-gateway wiring to
   RC422Dev, how to read `STAT`, measured numbers). Run it after any change to the tasks, the
   rings or the decoder.
-- **hdlc.cpp** is pure C-style code with no Arduino dependency, so it can be unit tested on a
-  PC. Encoder: `open` / `write` / `write_fcs` / `close` / `abort`, each returning 0..2 line
-  bytes into a caller buffer. Decoder: `feed` one line byte, frames delivered through an
-  `hdlc_frame_sink` of three callbacks. Bits are LSB first on the wire; the decoder re-aligns
-  on every flag so wire byte alignment does not matter. Two behaviours are deliberately copied
+- **libhdlc (since 2026-11-09).** hdlc, byte_frame, control_frame, ring_buffer and hot_path
+  moved out of this sketch into the libhdlc Arduino library: its own repository beside this one
+  in the RCL folder, reached from the sketchbook's `libraries` folder through a directory
+  junction, and shared with RC422Dev. `HDLCGW.ino` includes `<libhdlc.h>` first so arduino-cli
+  finds the library; every other file includes `"libhdlc/<name>.h"`. Change that code in
+  libhdlc with its unit tests (`cmake -S src -B build`, `ctest --test-dir build`), never by
+  copying it back here. This session owns libhdlc too; RC422Dev sends its changes as messages.
+- **hdlc (libhdlc)** is pure C with no Arduino dependency. Encoder: `open` / `write` /
+  `write_fcs` / `close` / `abort`, each returning 0..2 line bytes into a caller buffer, or the
+  `*_bits` forms giving 8-10 bit groups for a Pico PIO. Decoder: `feed` one line byte (whole
+  byte at once when it holds no stuffing, flag or abort), frames delivered through an
+  `hdlc_frame_sink` of four callbacks; `on_end` gets an `hdlc_rx_status`
+  (OK / TOO_LONG / ODD_BITS / BAD_CRC) and the decoder keeps counters in `stats`. Bits are LSB
+  first on the wire; the decoder re-aligns on every flag. Two behaviours are deliberately copied
   from SDLCBridge and must stay: a stuffed zero before the closing flag after five ones, and
   the shift-right/LSB-first build of output bytes.
 - **ring_buffer** is mutex-guarded and may only be used from tasks, never from an interrupt.
+  Check after a build that it really took the FreeRTOS lock: ESP-IDF also has pthread, so a
+  wrong platform guess would still build. `lock_take` must call `xQueueSemaphoreTake`
+  (objdump of the .elf, checked 2026-11-09).
 - `Doc/` holds the ESP32-S2 datasheet PDF; that is the authority for peripheral behaviour,
   not memory of other ESP32 variants.
 

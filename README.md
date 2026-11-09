@@ -64,6 +64,7 @@ Open defects are listed in [BUGS.md](BUGS.md).
 | 3 | Four wires to the line (and ground) | the line | see [Wiring](#wiring) |
 | 4 | A 2.4 GHz WiFi network | WiFi/TCP only | `WIFI SCAN` lists it |
 | 5 | `hdlc-loopback` from [HdlcGatewayTest](https://github.com/RetroCoreLabs/HdlcGatewayTest) | testing and scripted control | `hdlc-loopback --list` |
+| 6 | The [libhdlc](https://github.com/RetroCoreLabs/libhdlc) Arduino library | building | `libhdlc` is in the sketchbook's `libraries` folder |
 
 ## Wiring
 
@@ -89,6 +90,18 @@ hdlc-loopback --port COM10 --rates 38400 --seconds 10         # ten seconds of t
 `PASS` in the result table and exit code 0 means every frame came back intact.
 
 ## Building from source
+
+The HDLC framing, the host byte framing, the control frames and the ring buffer are in the
+**libhdlc** library, shared with RC422Dev (the Raspberry Pi Pico gateway). Put libhdlc in the
+sketchbook's `libraries` folder first. A clone kept elsewhere can be linked in with a directory
+junction:
+
+```powershell
+New-Item -ItemType Junction -Path "$env:USERPROFILE\Documents\Arduino\libraries\libhdlc" -Target <your libhdlc clone>
+```
+
+(The sketchbook folder is whatever Arduino IDE shows under File > Preferences; on some machines
+it is inside OneDrive.)
 
 Board `esp32:esp32:lolin_s2_mini`. With the `arduino-cli` that ships inside Arduino IDE 2:
 
@@ -121,7 +134,8 @@ CRC register *not* inverted is for the firmware and never reaches the line. Type
 | | | 86 NAK | refused, with a reason |
 
 `hdlc-loopback --port COM10 --no-console --command "<command>"` sends a COMMAND frame and prints
-the reply; repeat `--command` for several. The full wire format is in `control_frame.h`.
+the reply; repeat `--command` for several. The full wire format is described in libhdlc,
+`extras/docs/control-frames.md`, and the code is its `control_frame.h`.
 
 **From a terminal: the text console.** Open the port (115200 is what the build guide uses) and press ESC three times
 between frames. The prompt is `#`. `EXIT` goes back to forwarding mode. Programs should not

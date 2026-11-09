@@ -21,7 +21,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "ring_buffer.h"
+#include "libhdlc/ring_buffer.h"
 
 extern ring_buffer g_usb_tx_buffer;   /**< byte-stuffed frames waiting for the host */
 

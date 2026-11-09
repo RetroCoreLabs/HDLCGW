@@ -30,11 +30,11 @@
 #include <lwip/tcpip.h>
 #include <lwip/priv/tcp_priv.h>
 
-#include "byte_frame.h"
+#include "libhdlc/byte_frame.h"
 #include "console_out.h"
 #include "console_task.h"
-#include "control_frame.h"
-#include "ring_buffer.h"
+#include "libhdlc/control_frame.h"
+#include "libhdlc/ring_buffer.h"
 #include "spi_tx_task.h"
 
 /* Frames waiting for the peer. Internal RAM like the other three rings

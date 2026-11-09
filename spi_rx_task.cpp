@@ -42,7 +42,7 @@
 #include "spi_rx_task.h"
 
 #include <esp_timer.h>
-#include "hot_path.h"
+#include "libhdlc/hot_path.h"
 
 #include <string.h>
 
@@ -56,8 +56,8 @@
 #include <soc/lldesc.h>
 
 #include "console_out.h"
-#include "control_frame.h"
-#include "hdlc.h"
+#include "libhdlc/control_frame.h"
+#include "libhdlc/hdlc.h"
 
 #define PIN_RX_CLOCK 12
 #define PIN_RX_DATA  9

@@ -6,7 +6,7 @@
 ***************************************************************************/
 #include <esp_timer.h>
 #include "console_task.h"
-#include "hot_path.h"
+#include "libhdlc/hot_path.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -14,11 +14,11 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 
-#include "byte_frame.h"
+#include "libhdlc/byte_frame.h"
 #include "commands.h"
 #include "console_out.h"
-#include "control_frame.h"
-#include "hdlc.h"
+#include "libhdlc/control_frame.h"
+#include "libhdlc/hdlc.h"
 #include "spi_rx_task.h"
 #include "usb_rx.h"
 #include "spi_tx_task.h"
@@ -126,12 +126,15 @@ static HOT_PATH_CODE void on_line_byte(void *ctx, uint8_t data)
 
 /**
  * @brief hdlc_frame_sink callback: frame complete, forward or print it.
- * @param[in,out] ctx       The line_frame; emptied on return.
- * @param[in]     crc_good  FCS verdict from the decoder.
+ * @param[in,out] ctx     The line_frame; emptied on return.
+ * @param[in]     status  How the frame ended (libhdlc): only HDLC_RX_OK is
+ *                        forwarded; CRC error, odd bit count and too long
+ *                        are all bad frames.
  */
-static void on_line_end(void *ctx, bool crc_good)
+static void on_line_end(void *ctx, hdlc_rx_status status)
 {
     line_frame *lf = (line_frame *)ctx;
+    bool crc_good = (status == HDLC_RX_OK);
     bool fits = lf->len <= BYTE_FRAME_MAX;
 
     g_received_stats.total_frames++;
@@ -179,7 +182,9 @@ static void on_line_end(void *ctx, bool crc_good)
         /* The thing a host could never see before: a bad frame while
          * traffic flows, as a WARN log frame. */
         console_out_log(CONTROL_FRAME_LOG_WARN, "HDLC frame, %d bytes, %s", lf->len,
-                        fits ? "FCS BAD" : "too long, dropped");
+                        !fits ? "too long, dropped"
+                        : (status == HDLC_RX_BAD_CRC) ? "FCS BAD" /* the PC tool filters on it */
+                                                      : hdlc_rx_status_name(status));
     }
     lf->len = 0;
 }
@@ -321,7 +326,7 @@ const uint8_t *console_task_last_bad_frame(int index, int *len)
 
 uint32_t console_task_short_frames(void)
 {
-    return g_line_decoder.short_frames;
+    return g_line_decoder.stats.short_frames;
 }
 
 /* Bytes read from the USB serial port since boot, in every mode. Written

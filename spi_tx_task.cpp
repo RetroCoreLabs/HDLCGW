@@ -22,7 +22,7 @@
 ***************************************************************************/
 #include <esp_heap_caps.h>
 #include "spi_tx_task.h"
-#include "hot_path.h"
+#include "libhdlc/hot_path.h"
 
 #include <string.h>
 
@@ -30,7 +30,7 @@
 #include <driver/spi_master.h>
 
 #include "console_out.h"
-#include "hdlc.h"
+#include "libhdlc/hdlc.h"
 
 #define PIN_TX_CLOCK SCK    /* 7 */
 #define PIN_TX_DATA  MOSI   /* 11 */

@@ -45,8 +45,10 @@ typedef struct
     uint32_t datagrams_in;    /**< libxmsg XmsgNodeStats */
     uint32_t datagrams_out;
     uint32_t bad_headers;
-    uint32_t resyncs_asked;   /**< resyncs this gateway asked for (one per link-ready) */
+    uint32_t resyncs_asked;   /**< reachability requests that went out (one per link-ready, one
+                                   per REACH while none is waiting for its answer) */
     uint32_t resyncs_done;    /**< libxmsg XmsgNodeStats.resyncs: replies that reset our count */
+    uint32_t reach_in;        /**< reachability requests the peer sent us (its restarts) */
     size_t node_bytes;        /**< sizeof(XmsgNode), static RAM the node takes */
     uint32_t stack_free;      /**< least stack this task has had free, bytes */
 } node_status;
@@ -65,6 +67,13 @@ void node_task_request_start(void);
 
 /** @brief Ask the task to take the link down (DISC). */
 void node_task_request_stop(void);
+
+/**
+ * @brief Ask the task to send the peer a reachability request ("are you
+ *        there?", XMSG subtype 0x19) - the same one sent at every link-up.
+ *        The peer's answer (0x13) adds one to resyncs_done.
+ */
+void node_task_request_reach(void);
 
 /**
  * @brief Latest status.

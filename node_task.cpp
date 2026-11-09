@@ -254,6 +254,11 @@ void node_task_request_stop(void)
     s_want_stop = true;
 }
 
+void node_task_request_reach(void)
+{
+    s_want_resync = true;
+}
+
 void node_task_get_status(node_status *out)
 {
     *out = s_status;
@@ -304,6 +309,7 @@ static void update_status(void)
         s_status.datagrams_out = s_node.stats.datagrams_out;
         s_status.bad_headers = s_node.stats.bad_headers;
         s_status.resyncs_done = s_node.stats.resyncs;
+        s_status.reach_in = s_node.stats.reach_in;
     }
 }
 
@@ -335,12 +341,19 @@ void node_task_run(void *params)
             if (s_want_resync)
             {
                 int32_t peer = lapb_peer_node(&s_node.lapb);
+                /* libxmsg sends nothing while an earlier request still waits for its answer
+                 * (xmsg_node_resync returns XMSG_OK then too), so only a call made with none
+                 * waiting is a request on the line; only those are counted. */
+                bool waiting = s_node.resync_pending;
                 /* The peer number comes from LAPB's first frames; it is known once the link is
                  * up. Until then try again on the next pass. */
                 if (peer >= 0 && xmsg_node_resync(&s_node, (uint16_t)peer, now) == XMSG_OK)
                 {
                     s_want_resync = false;
-                    s_resyncs++;
+                    if (!waiting)
+                    {
+                        s_resyncs++;
+                    }
                     console_out_log(CONTROL_FRAME_LOG_INFO, "Resync with node %ld asked for.",
                                     (long)peer);
                 }

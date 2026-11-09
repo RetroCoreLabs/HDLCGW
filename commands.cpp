@@ -47,6 +47,7 @@ static void handle_inspect(const char *args);
 static void handle_exit(const char *args);
 static void handle_node(const char *args);
 static void handle_link(const char *args);
+static void handle_reach(const char *args);
 
 static const command COMMANDS[] =
 {
@@ -54,6 +55,7 @@ static const command COMMANDS[] =
     { "STAT",    "Line, node and USB counters",                                handle_stat },
     { "NODE",    "NODE [n] - Show or store our node number (used after RESET)", handle_node },
     { "LINK",    "LINK START|STOP - Start the link or take it down",           handle_link },
+    { "REACH",   "Ask the peer 'are you there?'; STAT shows asked / answered", handle_reach },
     { "BAUD",    "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored)", handle_baud },
     { "CLOCK",   "CLOCK ON|OFF - Run or stop the transmit clock",              handle_clock },
     { "INSPECT", "INSPECT [BAD [0..3]] - Last frame, or n-th newest bad one",  handle_inspect },
@@ -244,11 +246,12 @@ static void handle_stat(const char *args)
                            st.lapb_state, st.up ? "up" : "down", st.ready ? ", ready" : "",
                            (long)st.peer_node);
     }
-    console_out_printf("XMSG: datagrams in %u, out %u, bad headers %u, resyncs asked %u, "
-                       "done %u\r\n",
+    console_out_printf("XMSG: datagrams in %u, out %u, bad headers %u\r\n",
                        (unsigned)st.datagrams_in, (unsigned)st.datagrams_out,
-                       (unsigned)st.bad_headers, (unsigned)st.resyncs_asked,
-                       (unsigned)st.resyncs_done);
+                       (unsigned)st.bad_headers);
+    console_out_printf("Reachability: we sent %u, peer answered %u, peer asked us %u\r\n",
+                       (unsigned)st.resyncs_asked, (unsigned)st.resyncs_done,
+                       (unsigned)st.reach_in);
     console_out_printf("Line %u bit/s, clock %s\r\n", (unsigned)spi_tx_task_bit_rate(),
                        spi_tx_task_clock_enabled() ? "on" : "off");
     console_out_printf("  sent     %u frames, %u bytes; transmit ring full %u times\r\n",
@@ -468,6 +471,28 @@ static void handle_link(const char *args)
     {
         console_out_println("Usage: LINK START|STOP");
     }
+}
+
+/**
+ * @brief REACH command: queue a reachability request to the peer. The node
+ *        task sends it on its next pass once the peer number is known.
+ * @param[in] args  Unused.
+ */
+static void handle_reach(const char *args)
+{
+    node_status st;
+
+    (void)args;
+    node_task_get_status(&st);
+    if (!st.up || st.peer_node < 0)
+    {
+        console_out_println("The link is not up (or the peer is not known yet); nothing sent.");
+        return;
+    }
+    node_task_request_reach();
+    console_out_printf("Reachability request to node %ld queued (nothing new is sent while an "
+                       "earlier one waits for its answer). Before it: sent %u, answered %u.\r\n", (long)st.peer_node, (unsigned)st.resyncs_asked,
+                       (unsigned)st.resyncs_done);
 }
 
 void commands_process(char *line)

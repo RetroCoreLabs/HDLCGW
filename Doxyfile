@@ -1,0 +1,25 @@
+# Doxygen configuration for the HDLCGW Arduino sketch.
+# Run "doxygen Doxyfile" in this folder, then open docs/html/index.html.
+# Documentation is generated separately from compiling or uploading.
+# .ino files are parsed as C++ (FILE_PATTERNS + EXTENSION_MAPPING).
+PROJECT_NAME           = "HDLCGW"
+PROJECT_BRIEF          = "HDLC gateway for the LOLIN ESP32-S2 Mini"
+
+INPUT                  = .
+RECURSIVE              = YES
+FILE_PATTERNS          = *.ino *.h *.hpp *.c *.cpp *.md
+EXTENSION_MAPPING      = ino=C++
+
+OUTPUT_DIRECTORY       = docs
+EXCLUDE                = docs Doc build .pio
+
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+
+EXTRACT_ALL            = NO
+EXTRACT_STATIC         = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+
+SOURCE_BROWSER         = YES
+OPTIMIZE_OUTPUT_FOR_C  = YES

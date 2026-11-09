@@ -1,0 +1,94 @@
+/**************************************************************************
+** TERM - terminal sessions (TAD CONNECT-TO) to systems on the peer      **
+**                                                                       **
+** A pool of TERM_SLOTS sessions, each a libxmsg TadAsker with a buffer  **
+** for host text and one for typed text. Slots 0..TERM_TELNET_SLOTS-1    **
+** belong to telnet users (one per user), the last one to the TERM       **
+** command. Everything libxmsg does runs in the node task (term_pass);   **
+** the telnet and console tasks only fill and empty the text buffers,    **
+** under one lock. The slots live in PSRAM, allocated once at start-up:  **
+** internal RAM is full once WiFi is linked in.                          **
+**                                                                       **
+** Ronny Hansen                                                          **
+** SPDX-License-Identifier: MIT  Copyright (c) 2026 Ronny Hansen         **
+***************************************************************************/
+#ifndef TERM_H
+#define TERM_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include <libxmsg.h>
+
+/** Telnet users at once (Ronny, 2026-11-09: at least 8). */
+#define TERM_TELNET_SLOTS 8
+/** The slot the TERM command uses. */
+#define TERM_CONSOLE_SLOT TERM_TELNET_SLOTS
+/** All slots. XMSG_MAX_SESSIONS (build_opt.h) must be at least this. */
+#define TERM_SLOTS (TERM_TELNET_SLOTS + 1)
+
+#if XMSG_MAX_SESSIONS < TERM_SLOTS
+#error "XMSG_MAX_SESSIONS is below TERM_SLOTS: set it in build_opt.h"
+#endif
+
+/** @brief What one session is doing. */
+typedef struct
+{
+    const char *state;     /**< tad_asker_state_name(), or "none" */
+    bool open;             /**< asked for or running; false once closed or failed */
+    bool echo;             /**< the host wants typing echoed (ECKM 0x01); false for a password */
+    int error;             /**< the asker's error on FAILED, else 0 */
+    bool may_type;         /**< the host has granted input */
+    uint32_t bytes_in;     /**< host text bytes received */
+    uint32_t bytes_out;    /**< typed bytes sent */
+    uint32_t lost_in;      /**< host text bytes dropped, buffer full */
+    int queued_out;        /**< typed bytes waiting for an input grant */
+} term_status;
+
+/**
+ * @brief Allocate the slots in PSRAM and create the lock. Once, from
+ *        node_task_init().
+ * @return 0, or -1 when PSRAM could not be had (then every open fails).
+ */
+int term_init(void);
+
+/**
+ * @brief Ask for a session in one slot. The node task sends the connect
+ *        letter on its next pass once the link is ready.
+ * @param[in] slot    0..TERM_SLOTS-1.
+ * @param[in] system  System name as XROUT knows it, e.g. "D100"; at most 15
+ *                    characters.
+ * @return 0 when queued, -1 for a bad slot or name, or a slot in use.
+ */
+int term_open(int slot, const char *system);
+
+/**
+ * @brief Queue typed text. CR is not added.
+ * @return Bytes queued (fewer when the buffer is full), -1 with no session.
+ */
+int term_type(int slot, const uint8_t *text, int len);
+
+/** @brief Ask for the session in a slot to end (DCON). */
+void term_hangup(int slot);
+
+/**
+ * @brief Take host text collected since the last call.
+ * @return Bytes copied; 0 when there is none.
+ */
+int term_read(int slot, uint8_t *out, int max);
+
+/**
+ * @brief Read one slot's state.
+ * @param[out] out  Filled; state "none" for a bad slot.
+ */
+void term_get_status(int slot, term_status *out);
+
+/**
+ * @brief Work for every slot: open, type, hang up, notice an end. Called
+ *        by the node task on each pass, before xmsg_node_tick().
+ * @param[in] node  The node.
+ * @param[in] now   millis().
+ */
+void term_pass(XmsgNode *node, uint32_t now);
+
+#endif /* TERM_H */

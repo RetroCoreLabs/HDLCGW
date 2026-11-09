@@ -18,6 +18,7 @@
 **   Node      4  8192  libhdlc decoder + libxmsg node, owns the line    **
 **   Console   2  4096  USB input: control frames, text console          **
 **   USB tx    1  2048  USB output ring to the host                      **
+**   Telnet    1  6144  WiFi station, telnet user <-> terminal session   **
 **                                                                       **
 ** Ronny Hansen                                                          **
 ** SPDX-License-Identifier: MIT  Copyright (c) 2026 Ronny Hansen         **
@@ -35,6 +36,7 @@
 #include "console_task.h"
 #include "node_task.h"
 #include "settings.h"
+#include "telnet_task.h"
 #include "usb_rx.h"
 #include "usb_tx_task.h"
 
@@ -82,6 +84,7 @@ void setup(void)
     console_out_init();
     line_log_set_error(line_error);
     node_task_init();
+    telnet_task_init();
     console_out_event(CONTROL_FRAME_EVENT_BOOT, "XMSGGW version " XMSGGW_VERSION);
 
     /* Line stacks and priorities are HDLCGW's measured ones (HDLCGW.ino).
@@ -94,6 +97,10 @@ void setup(void)
     xTaskCreate(node_task_run, "Node", 8192, NULL, 4, NULL);
     xTaskCreate(console_task_run, "Console", 4096, NULL, 2, NULL);
     xTaskCreate(usb_tx_task_run, "USB tx", 2048, NULL, 1, NULL);
+    /* WiFi and telnet at the lowest level, as HDLCGW's WiFi task: a slow
+     * network must never cost line bytes. 6 KB is a first guess; TASK shows
+     * what it uses. */
+    xTaskCreate(telnet_task_run, "Telnet", 6144, NULL, 1, NULL);
 }
 
 /** @brief Arduino main loop. Everything runs in the tasks; this only sleeps. */

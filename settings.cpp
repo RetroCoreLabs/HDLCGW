@@ -8,6 +8,7 @@
 
 #include <Preferences.h>
 #include <stdio.h>
+#include <string.h>
 
 static const char *NAMESPACE = "xmsggw";
 
@@ -132,4 +133,71 @@ int settings_port_seed_save(void *ctx, uint16_t seed)
         p.end();
     }
     return (written == sizeof seed) ? 0 : -1;
+}
+
+int settings_wifi(char *ssid, char *pass)
+{
+    Preferences p;
+    ssid[0] = '\0';
+    pass[0] = '\0';
+    if (p.begin(NAMESPACE, true))
+    {
+        (void)p.getString("wssid", ssid, SETTINGS_SSID_SIZE);
+        (void)p.getString("wpass", pass, SETTINGS_PASS_SIZE);
+        p.end();
+    }
+    if (ssid[0] != '\0')
+    {
+        return 0;
+    }
+    /* None of our own: HDLCGW's, read only (settings.h). */
+    pass[0] = '\0';
+    if (p.begin("hdlcgw", true))
+    {
+        (void)p.getString("ssid", ssid, SETTINGS_SSID_SIZE);
+        (void)p.getString("pass", pass, SETTINGS_PASS_SIZE);
+        p.end();
+    }
+    return (ssid[0] != '\0') ? 1 : -1;
+}
+
+/**
+ * @brief Store one string key in our namespace.
+ * @param[in] key    Key.
+ * @param[in] value  Text.
+ * @param[in] max    Longest allowed length.
+ * @return 0 or -1.
+ */
+static int put_text(const char *key, const char *value, size_t max)
+{
+    Preferences p;
+    size_t len = strlen(value);
+    size_t written = 0;
+    bool opened;
+    if (len > max)
+    {
+        return -1;
+    }
+    opened = p.begin(NAMESPACE, false);
+    if (opened)
+    {
+        written = p.putString(key, value);
+        p.end();
+    }
+    /* An empty password writes 0 bytes, so the open must be checked too. */
+    return (opened && written == len) ? 0 : -1;
+}
+
+int settings_set_wifi_ssid(const char *ssid)
+{
+    if (ssid[0] == '\0')
+    {
+        return -1;
+    }
+    return put_text("wssid", ssid, SETTINGS_SSID_SIZE - 1);
+}
+
+int settings_set_wifi_pass(const char *pass)
+{
+    return put_text("wpass", pass, SETTINGS_PASS_SIZE - 1);
 }

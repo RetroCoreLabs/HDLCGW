@@ -27,6 +27,7 @@
 #include "console_task.h"
 #include "node_task.h"
 #include "settings.h"
+#include "telnet_task.h"
 #include "usb_tx_task.h"
 
 /* Same limits as HDLCGW: 983000 is the most the SPI clock divider gives
@@ -49,6 +50,7 @@ static void handle_node(const char *args);
 static void handle_link(const char *args);
 static void handle_reach(const char *args);
 static void handle_term(const char *args);
+static void handle_wifi(const char *args);
 
 static const command COMMANDS[] =
 {
@@ -59,6 +61,8 @@ static const command COMMANDS[] =
     { "REACH",   "Ask the peer 'are you there?'; STAT shows asked / answered", handle_reach },
     { "TERM",    "TERM CONNECT <system>|TYPE <text>|SHOW|STATUS|HANGUP - terminal session",
       handle_term },
+    { "WIFI",    "WIFI [STATUS]|SSID <name>|PASS <password>|CONNECT - network for telnet",
+      handle_wifi },
     { "BAUD",    "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored)", handle_baud },
     { "CLOCK",   "CLOCK ON|OFF - Run or stop the transmit clock",              handle_clock },
     { "INSPECT", "INSPECT [BAD [0..3]] - Last frame, or n-th newest bad one",  handle_inspect },
@@ -509,7 +513,7 @@ static void term_show(void)
     int n;
     int total = 0;
 
-    while ((n = node_task_term_read(buf, (int)sizeof buf)) > 0)
+    while ((n = term_read(TERM_CONSOLE_SLOT, buf, (int)sizeof buf)) > 0)
     {
         for (int i = 0; i < n; i++)
         {
@@ -551,7 +555,7 @@ static void handle_term(const char *args)
         {
             console_out_println("Usage: TERM CONNECT <system>, for example TERM CONNECT D100");
         }
-        else if (node_task_term_connect(sys) != 0)
+        else if (term_open(TERM_CONSOLE_SLOT, sys) != 0)
         {
             console_out_println("Not started: a session is open, or the name is too long.");
         }
@@ -577,7 +581,7 @@ static void handle_term(const char *args)
         }
         memcpy(line, text, (size_t)len);
         line[len++] = '\r';
-        int took = node_task_term_type(line, len);
+        int took = term_type(TERM_CONSOLE_SLOT, line, len);
         if (took < 0)
         {
             console_out_println("No session open.");
@@ -593,13 +597,13 @@ static void handle_term(const char *args)
     }
     else if (strcasecmp(args, "HANGUP") == 0)
     {
-        node_task_term_hangup();
+        term_hangup(TERM_CONSOLE_SLOT);
         console_out_println("Hangup asked for.");
     }
     else if (strcasecmp(args, "STATUS") == 0 || *args == '\0')
     {
-        node_term_status ts;
-        node_task_term_status(&ts);
+        term_status ts;
+        term_get_status(TERM_CONSOLE_SLOT, &ts);
         console_out_printf("Session %s, error %d, %s; host text in %u bytes (lost %u), typed out "
                            "%u bytes, %d waiting\r\n",
                            ts.state, ts.error, ts.may_type ? "may type" : "may not type",
@@ -610,6 +614,78 @@ static void handle_term(const char *args)
     {
         console_out_println("Usage: TERM CONNECT <system>|TYPE <text>|SHOW|STATUS|HANGUP");
     }
+}
+
+/**
+ * @brief WIFI command. The password is stored but never printed.
+ * @param[in] args  STATUS (or nothing), SSID <name>, PASS <password> or
+ *                  CONNECT (read the settings again and join).
+ */
+static void handle_wifi(const char *args)
+{
+    if (args == NULL || *args == '\0' || strcasecmp(args, "STATUS") == 0)
+    {
+        telnet_task_stats ts;
+        char ssid[SETTINGS_SSID_SIZE];
+        char pass[SETTINGS_PASS_SIZE];
+        int src = settings_wifi(ssid, pass);
+        static const char *const SRC[] = { "XMSGGW's own", "HDLCGW's stored" };
+        telnet_task_get_stats(&ts);
+        memset(pass, 0, sizeof pass);
+        if (src < 0)
+        {
+            console_out_println("WiFi: no network stored (WIFI SSID <name>, WIFI PASS <p>, "
+                                "WIFI CONNECT)");
+        }
+        else
+        {
+            console_out_printf("WiFi network %s (%s settings), %s", ssid, SRC[src],
+                               ts.wifi_up ? "joined" : "not joined");
+            if (ts.wifi_up)
+            {
+                console_out_printf(", ip %u.%u.%u.%u, rssi %d dBm",
+                                   (unsigned)(ts.ip & 0xFFu), (unsigned)((ts.ip >> 8u) & 0xFFu),
+                                   (unsigned)((ts.ip >> 16u) & 0xFFu), (unsigned)(ts.ip >> 24u),
+                                   ts.rssi);
+            }
+            console_out_println();
+        }
+        console_out_printf("Telnet port %u: %u of %u users on; users so far %u, turned away %u, "
+                           "WiFi joins %u, typed %u bytes, sent %u bytes\r\n",
+                           (unsigned)TELNET_TASK_PORT, (unsigned)ts.users_on,
+                           (unsigned)TELNET_TASK_USERS,
+                           (unsigned)ts.users, (unsigned)ts.refused, (unsigned)ts.wifi_connects,
+                           (unsigned)ts.bytes_from_user, (unsigned)ts.bytes_to_user);
+        return;
+    }
+    if (strncasecmp(args, "SSID ", 5) == 0)
+    {
+        if (settings_set_wifi_ssid(args + 5) != 0)
+        {
+            console_out_println("Not stored: 1 to 32 characters.");
+            return;
+        }
+        console_out_println("Network name stored; WIFI CONNECT to use it.");
+        return;
+    }
+    if (strncasecmp(args, "PASS", 4) == 0 && (args[4] == ' ' || args[4] == '\0'))
+    {
+        const char *p = (args[4] == ' ') ? args + 5 : "";
+        if (settings_set_wifi_pass(p) != 0)
+        {
+            console_out_println("Not stored: at most 64 characters.");
+            return;
+        }
+        console_out_println("Password stored (not shown); WIFI CONNECT to use it.");
+        return;
+    }
+    if (strcasecmp(args, "CONNECT") == 0)
+    {
+        telnet_task_reconnect();
+        console_out_println("Joining the network again; WIFI STATUS shows when it is up.");
+        return;
+    }
+    console_out_println("Usage: WIFI [STATUS]|SSID <name>|PASS <password>|CONNECT");
 }
 
 void commands_process(char *line)

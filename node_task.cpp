@@ -7,6 +7,7 @@
 #include "node_task.h"
 
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <string.h>
 
 #include <libxmsg.h>
@@ -18,6 +19,7 @@
 
 #include "console_out.h"
 #include "settings.h"
+#include "term.h"
 
 /* Longest line frame: address, control, N1 bytes of data, FCS. */
 #define LINE_FRAME_MAX (XMSG_LAPB_N1 + 4)
@@ -26,8 +28,13 @@
  * and closing flags, the closing pad and the idle byte after it. */
 #define LINE_ENCODED_MAX ((LINE_FRAME_MAX * 6) / 5 + 8)
 
-/* Large: static, never on a task stack (xmsg_node.h). */
-static XmsgNode s_node;
+/* Large (10,928 bytes with 12 sessions): never on a task stack (xmsg_node.h),
+ * and allocated once in PSRAM by node_task_init(), because internal RAM is
+ * full once WiFi is linked in (the link overflowed by 4,080 bytes with the
+ * node static, 2026-11-09). The node runs at line speed, at most 307,200 bit/s
+ * by design; the line rings, which the SPI receive task hits hardest, stay in
+ * internal RAM as in HDLCGW. Only used while s_node_ok. */
+static XmsgNode *s_np = NULL;
 static bool s_node_ok = false;
 
 static hdlc_decoder s_dec;
@@ -59,211 +66,6 @@ static bool s_last_good = false;
 static uint8_t s_bad_frames[BAD_HISTORY][LINE_FRAME_MAX];
 static int s_bad_lens[BAD_HISTORY];
 static int s_bad_next = 0;
-
-/* ------------------------------------------------------- terminal session */
-
-/* One TAD terminal session (libxmsg tad_asker.h), the first real XMSG session
- * XMSGGW runs; telnet users get one each later. The asker lives in this task
- * like the node. Text crosses to the console task through two small buffers
- * under s_term_lock. */
-#define TERM_IN_SIZE  2048
-#define TERM_OUT_SIZE 256
-static TadAsker s_tad;
-static bool s_tad_open = false;            /* initialised and attached, until CLOSED/FAILED */
-static char s_term_system[16];
-static volatile bool s_term_want_connect = false;
-static volatile bool s_term_want_hangup = false;
-static SemaphoreHandle_t s_term_lock = NULL;
-static uint8_t s_term_in[TERM_IN_SIZE];    /* host text not yet read by TERM SHOW */
-static int s_term_in_len = 0;
-static uint32_t s_term_lost_in = 0;
-static uint8_t s_term_out[TERM_OUT_SIZE];  /* typed text waiting for an input grant */
-static int s_term_out_len = 0;
-
-/** @brief Take the text buffer lock; false when it could not be had in 50 ms. */
-static bool term_lock(void)
-{
-    return s_term_lock != NULL && xSemaphoreTake(s_term_lock, pdMS_TO_TICKS(50)) == pdTRUE;
-}
-
-/** @brief Asker callback: host text, kept for TERM SHOW. */
-static void term_text(void *ctx, const uint8_t *bytes, size_t len)
-{
-    (void)ctx;
-    if (!term_lock())
-    {
-        s_term_lost_in += (uint32_t)len;
-        return;
-    }
-    for (size_t i = 0; i < len; i++)
-    {
-        if (s_term_in_len < TERM_IN_SIZE)
-        {
-            s_term_in[s_term_in_len++] = bytes[i];
-        }
-        else
-        {
-            s_term_lost_in++;
-        }
-    }
-    xSemaphoreGive(s_term_lock);
-}
-
-/** @brief Asker callback: state changes, as log lines. */
-static void term_state(void *ctx, TadAskerState state, int error)
-{
-    (void)ctx;
-    console_out_log(CONTROL_FRAME_LOG_INFO, "Terminal session: %s%s%d",
-                    tad_asker_state_name(state), (error != 0) ? ", error " : "",
-                    (error != 0) ? error : 0);
-}
-
-/** @brief Asker callback: the host's login ended; hang up, as the asker expects. */
-static void term_logged_out(void *ctx)
-{
-    (void)ctx;
-    console_out_log(CONTROL_FRAME_LOG_INFO, "Terminal session: host logged out, hanging up");
-    s_term_want_hangup = true;
-}
-
-int node_task_term_connect(const char *system)
-{
-    if (strlen(system) >= sizeof s_term_system || s_tad_open || s_term_want_connect)
-    {
-        return -1;
-    }
-    memcpy(s_term_system, system, strlen(system) + 1);
-    s_term_want_connect = true;
-    return 0;
-}
-
-int node_task_term_type(const uint8_t *text, int len)
-{
-    int took = 0;
-    if (!s_tad_open)
-    {
-        return -1;
-    }
-    if (!term_lock())
-    {
-        return 0;
-    }
-    while (took < len && s_term_out_len < TERM_OUT_SIZE)
-    {
-        s_term_out[s_term_out_len++] = text[took++];
-    }
-    xSemaphoreGive(s_term_lock);
-    return took;
-}
-
-void node_task_term_hangup(void)
-{
-    s_term_want_hangup = true;
-}
-
-int node_task_term_read(uint8_t *out, int max)
-{
-    int n;
-    if (!term_lock())
-    {
-        return 0;
-    }
-    n = (s_term_in_len < max) ? s_term_in_len : max;
-    memcpy(out, s_term_in, (size_t)n);
-    memmove(s_term_in, &s_term_in[n], (size_t)(s_term_in_len - n));
-    s_term_in_len -= n;
-    xSemaphoreGive(s_term_lock);
-    return n;
-}
-
-void node_task_term_status(node_term_status *out)
-{
-    /* Read from the console task without the node's lock: a status line,
-     * at most one pass old, as node_task_get_status. */
-    out->state = (s_tad_open || s_tad.state != TAD_ASKER_IDLE) ? tad_asker_state_name(s_tad.state)
-                                                                : "none";
-    out->error = s_tad.error;
-    out->may_type = s_tad_open && tad_asker_may_type(&s_tad);
-    out->bytes_in = s_tad.stats.text_bytes_in;
-    out->bytes_out = s_tad.stats.text_bytes_out;
-    out->lost_in = s_term_lost_in;
-    out->queued_out = s_term_out_len;
-}
-
-/**
- * @brief The terminal session's part of a node task pass: connect, type,
- *        hang up. Runs only in the node task.
- * @param[in] now  millis().
- */
-static void term_pass(uint32_t now)
-{
-    if (s_term_want_connect && xmsg_node_is_ready(&s_node))
-    {
-        int32_t peer = lapb_peer_node(&s_node.lapb);
-        TadAskerConfig cfg;
-        TadAskerCallbacks cb;
-        s_term_want_connect = false;
-        if (peer < 0)
-        {
-            console_out_log(CONTROL_FRAME_LOG_WARN, "Terminal session: peer not known yet");
-            return;
-        }
-        tad_asker_config_default(&cfg, (uint16_t)peer, s_term_system);
-        memset(&cb, 0, sizeof cb);
-        cb.text_out = term_text;
-        cb.state = term_state;
-        cb.logged_out = term_logged_out;
-        if (term_lock())
-        {
-            s_term_in_len = 0;
-            s_term_out_len = 0;
-            xSemaphoreGive(s_term_lock);
-        }
-        s_term_lost_in = 0;
-        if (tad_asker_init(&s_tad, &cfg, &cb) != XMSG_OK)
-        {
-            console_out_log(CONTROL_FRAME_LOG_ERROR, "Terminal session: bad system name");
-            return;
-        }
-        int rc = tad_asker_connect(&s_tad, &s_node, now);
-        if (rc != XMSG_OK)
-        {
-            console_out_log(CONTROL_FRAME_LOG_ERROR, "Terminal session: connect refused, %d", rc);
-            return;
-        }
-        s_tad_open = true;
-    }
-    if (!s_tad_open)
-    {
-        return;
-    }
-    if (s_tad.state == TAD_ASKER_CLOSED || s_tad.state == TAD_ASKER_FAILED)
-    {
-        s_tad_open = false;   /* the asker has detached itself from the node */
-        s_term_want_hangup = false;
-        return;
-    }
-    if (s_term_want_hangup)
-    {
-        s_term_want_hangup = false;
-        if (tad_asker_hangup(&s_tad, now) != XMSG_OK)
-        {
-            tad_asker_abort(&s_tad);
-        }
-        return;
-    }
-    if (s_term_out_len > 0 && tad_asker_may_type(&s_tad) && term_lock())
-    {
-        int n = (s_term_out_len < TAD_MAX_DATA) ? s_term_out_len : TAD_MAX_DATA;
-        int took = tad_asker_write(&s_tad, s_term_out, (size_t)n, now);
-        if (took > 0)
-        {
-            memmove(s_term_out, &s_term_out[took], (size_t)(s_term_out_len - took));
-            s_term_out_len -= took;
-        }
-        xSemaphoreGive(s_term_lock);
-    }
-}
 
 /* ------------------------------------------------------------ transport */
 
@@ -343,7 +145,7 @@ static void on_frame(void *ctx, int length, hdlc_rx_status status)
     }
     s_frames_in++;
     s_bytes_in += (uint32_t)length;
-    (void)xmsg_node_feed_frame(&s_node, s_rx_frame, (size_t)length, millis());
+    (void)xmsg_node_feed_frame(s_np, s_rx_frame, (size_t)length, millis());
 }
 
 /** @brief Abort and short runs: nothing kept, the buffer is reused as it is. */
@@ -408,9 +210,9 @@ void node_task_init(void)
     XmsgNodeCallbacks cb;
     uint16_t own = settings_node();
 
-    if (s_term_lock == NULL)
+    if (term_init() != 0)
     {
-        s_term_lock = xSemaphoreCreateMutex();
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the terminal sessions");
     }
     hdlc_decoder_reset(&s_dec);
     hdlc_decoder_set_buffer(&s_dec, s_rx_frame, (int)sizeof s_rx_frame);
@@ -418,11 +220,17 @@ void node_task_init(void)
     memset(&s_status, 0, sizeof s_status);
     s_status.own_node = own;
     s_status.peer_node = -1;
-    s_status.node_bytes = sizeof s_node;
+    s_status.node_bytes = sizeof(XmsgNode);
     if (own == 0)
     {
         console_out_log(CONTROL_FRAME_LOG_WARN,
                         "No node number stored: NODE <n>, then RESET. The link stays down.");
+        return;
+    }
+    s_np = (XmsgNode *)heap_caps_calloc(1, sizeof(XmsgNode), MALLOC_CAP_SPIRAM);
+    if (s_np == NULL)
+    {
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the XMSG node; the link stays down.");
         return;
     }
 
@@ -442,7 +250,7 @@ void node_task_init(void)
     memset(&cb, 0, sizeof cb);
     cb.link_state = link_state;
 
-    if (xmsg_node_init(&s_node, &cfg, &ports, &cb) != XMSG_OK)
+    if (xmsg_node_init(s_np, &cfg, &ports, &cb) != XMSG_OK)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "xmsg_node_init failed; the link stays down.");
         return;
@@ -510,15 +318,15 @@ static void update_status(void)
     s_status.resyncs_asked = s_resyncs;
     if (s_node_ok)
     {
-        s_status.lapb_state = (int)lapb_state(&s_node.lapb);
-        s_status.up = xmsg_node_is_up(&s_node);
-        s_status.ready = xmsg_node_is_ready(&s_node);
-        s_status.peer_node = lapb_peer_node(&s_node.lapb);
-        s_status.datagrams_in = s_node.stats.datagrams_in;
-        s_status.datagrams_out = s_node.stats.datagrams_out;
-        s_status.bad_headers = s_node.stats.bad_headers;
-        s_status.resyncs_done = s_node.stats.resyncs;
-        s_status.reach_in = s_node.stats.reach_in;
+        s_status.lapb_state = (int)lapb_state(&s_np->lapb);
+        s_status.up = xmsg_node_is_up(s_np);
+        s_status.ready = xmsg_node_is_ready(s_np);
+        s_status.peer_node = lapb_peer_node(&s_np->lapb);
+        s_status.datagrams_in = s_np->stats.datagrams_in;
+        s_status.datagrams_out = s_np->stats.datagrams_out;
+        s_status.bad_headers = s_np->stats.bad_headers;
+        s_status.resyncs_done = s_np->stats.resyncs;
+        s_status.reach_in = s_np->stats.reach_in;
     }
 }
 
@@ -540,28 +348,28 @@ void node_task_run(void *params)
             if (s_want_stop)
             {
                 s_want_stop = false;
-                (void)xmsg_node_link_stop(&s_node, now);
+                (void)xmsg_node_link_stop(s_np, now);
             }
             if (s_want_start)
             {
                 s_want_start = false;
-                (void)xmsg_node_link_start(&s_node, now);
+                (void)xmsg_node_link_start(s_np, now);
             }
             if (s_want_resync)
             {
-                int32_t peer = lapb_peer_node(&s_node.lapb);
+                int32_t peer = lapb_peer_node(&s_np->lapb);
                 /* libxmsg sends nothing while an earlier request still waits for its answer
                  * and is younger than cfg.resync_timeout_ms (xmsg_node_resync returns XMSG_OK
                  * then too); after that it sends again (libxmsg 1fb0743). A request went out
                  * when none was waiting, or when the send time changed. */
-                bool waiting = s_node.resync_pending;
-                uint32_t sent_before = s_node.resync_sent_ms;
+                bool waiting = s_np->resync_pending;
+                uint32_t sent_before = s_np->resync_sent_ms;
                 /* The peer number comes from LAPB's first frames; it is known once the link is
                  * up. Until then try again on the next pass. */
-                if (peer >= 0 && xmsg_node_resync(&s_node, (uint16_t)peer, now) == XMSG_OK)
+                if (peer >= 0 && xmsg_node_resync(s_np, (uint16_t)peer, now) == XMSG_OK)
                 {
                     s_want_resync = false;
-                    if (!waiting || s_node.resync_sent_ms != sent_before)
+                    if (!waiting || s_np->resync_sent_ms != sent_before)
                     {
                         s_resyncs++;
                     }
@@ -569,8 +377,8 @@ void node_task_run(void *params)
                                     (long)peer);
                 }
             }
-            term_pass(now);
-            (void)xmsg_node_tick(&s_node, now);
+            term_pass(s_np, now);
+            (void)xmsg_node_tick(s_np, now);
         }
         update_status();
         if (n == 0)

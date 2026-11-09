@@ -35,7 +35,7 @@
 #include "console_task.h"
 #include "libhdlc/control_frame.h"
 #include "libhdlc/ring_buffer.h"
-#include "spi_tx_task.h"
+#include "libhdlc/esp32s2/spi_tx_task.h"
 
 /* Frames waiting for the peer. Internal RAM like the other three rings
  * (Ronny, 2026-11-09: every byte to the peer passes through it). It was

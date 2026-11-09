@@ -34,9 +34,10 @@
 
 #include "console_out.h"
 #include "console_task.h"
-#include "spi_rx_task.h"
-#include "spi_tx_task.h"
+#include "libhdlc/esp32s2/spi_rx_task.h"
+#include "libhdlc/esp32s2/spi_tx_task.h"
 #include "usb_rx.h"
+#include "libhdlc/esp32s2/line_log.h"
 #include "usb_tx_task.h"
 #include "wifi_task.h"
 
@@ -53,6 +54,20 @@
  * ESC. The line tasks run above the console task so the line is never
  * starved. Stack sizes are in bytes on the ESP32 port of FreeRTOS.
  */
+/** @brief Error text from the libhdlc line tasks before the console is up:
+ *        straight to USB serial, as the tasks did before they moved. */
+static void line_error_early(const char *text)
+{
+    Serial.println(text);
+}
+
+/** @brief Error text from the libhdlc line tasks once the console is up:
+ *        the console log. */
+static void line_error(const char *text)
+{
+    console_out_log(CONTROL_FRAME_LOG_ERROR, "%s", text);
+}
+
 void setup(void)
 {
     /* USB CDC receive queue. The core's default is 256 bytes and bytes are
@@ -69,12 +84,14 @@ void setup(void)
     usb_rx_begin();
     Serial.println("HDLC GW version " HDLCGW_VERSION);
 
+    line_log_set_error(line_error_early);
     spi_tx_task_init();
     spi_rx_task_init();
     usb_tx_task_init();
     console_task_init();
     wifi_task_init();
     console_out_init();
+    line_log_set_error(line_error);
     /* The same news as the text banner, as an EVENT frame for a host program
      * that is already listening on the frame channel. */
     console_out_event(CONTROL_FRAME_EVENT_BOOT, "HDLC GW version " HDLCGW_VERSION);

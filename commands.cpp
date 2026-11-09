@@ -28,8 +28,8 @@
 #include "console_out.h"
 #include "console_task.h"
 #include "libhdlc/hdlc.h"
-#include "spi_rx_task.h"
-#include "spi_tx_task.h"
+#include "libhdlc/esp32s2/spi_rx_task.h"
+#include "libhdlc/esp32s2/spi_tx_task.h"
 #include "usb_tx_task.h"
 #include "wifi_task.h"
 
@@ -1056,6 +1056,12 @@ static void handle_clock(const char *args)
     }
 }
 
+/** @brief Print one text line from libhdlc on the console. */
+static void print_text(const char *text)
+{
+    console_out_print(text);
+}
+
 /**
  * @brief RXDMA command: show the receive DMA descriptors. HDLCGW addition.
  * @param[in] args  Rest of the line, or NULL.
@@ -1063,7 +1069,7 @@ static void handle_clock(const char *args)
 static void handle_rxdma(const char *args)
 {
     (void)args;
-    spi_rx_task_print_dma();
+    spi_rx_task_print_dma(print_text);
 }
 
 void commands_process(char *line)

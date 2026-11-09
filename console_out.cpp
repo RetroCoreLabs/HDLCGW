@@ -13,8 +13,8 @@
 #include <esp_heap_caps.h>
 
 #include "console_task.h"
-#include "spi_rx_task.h"
-#include "spi_tx_task.h"
+#include "libhdlc/esp32s2/spi_rx_task.h"
+#include "libhdlc/esp32s2/spi_tx_task.h"
 #include "usb_tx_task.h"
 #include "wifi_task.h"
 

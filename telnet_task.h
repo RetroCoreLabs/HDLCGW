@@ -2,19 +2,18 @@
 ** TELNET_TASK - WiFi, and a telnet user's terminal session to the host  **
 **                                                                       **
 ** Joins the stored WiFi network (settings_wifi) and listens on TCP port **
-** 23, for up to TELNET_TASK_USERS users at once. When a user connects,  **
-** the task opens a terminal session for it (term_open, the user's own   **
-** slot) to the peer's system and passes bytes both ways: what the user  **
-** types                                                                 **
-** goes to the host as keystrokes, the host's text goes to the user.     **
-** The user hanging up ends the session (DCON); the session ending       **
-** (LOGOUT, or a refusal) closes the user's connection.                  **
+** 23, for up to TELNET_TASK_USERS users at once. A user first logs in  **
+** to XMSGGW (users.h; libxmsg auth_login), then gets the "XMSGGW> "     **
+** prompt: CONNECT <system>, LIST, WHO, INFO, PASSWORD, HELP, EXIT, and  **
+** for admins USERS, ADDUSER, DELUSER, RESETPW. CONNECT opens a terminal **
+** session (term_open, the user's own slot) and passes bytes both ways;  **
+** when the session ends (LOGOUT, or a refusal) the user is back at the  **
+** prompt. The user hanging up ends the session (DCON).                  **
 **                                                                       **
 ** Telnet: the task says WILL ECHO and WILL SUPPRESS-GO-AHEAD so the     **
 ** client sends each key as typed and does not echo; the task echoes     **
-** itself as the host asks (ECKM: not for a password). Other telnet      **
-** options are refused or ignored. No login on the gateway yet: the      **
-** SINTRAN login is the only one (users and levels come later).          **
+** itself (not passwords; in a session as the host asks, ECKM). Other    **
+** telnet options are refused or ignored.                                **
 **                                                                       **
 ** Ronny Hansen                                                          **
 ** SPDX-License-Identifier: MIT  Copyright (c) 2026 Ronny Hansen         **

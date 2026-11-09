@@ -197,6 +197,30 @@ int settings_set_wifi_ssid(const char *ssid)
     return put_text("wssid", ssid, SETTINGS_SSID_SIZE - 1);
 }
 
+uint16_t settings_ttyp(void)
+{
+    Preferences p;
+    uint16_t v = 0;
+    if (p.begin(NAMESPACE, true))
+    {
+        v = p.getUShort("ttyp", 0);
+        p.end();
+    }
+    return v;
+}
+
+int settings_set_ttyp(uint16_t ttyp)
+{
+    Preferences p;
+    size_t written = 0;
+    if (p.begin(NAMESPACE, false))
+    {
+        written = p.putUShort("ttyp", ttyp);
+        p.end();
+    }
+    return (written == sizeof ttyp) ? 0 : -1;
+}
+
 int settings_set_wifi_pass(const char *pass)
 {
     return put_text("wpass", pass, SETTINGS_PASS_SIZE - 1);

@@ -12,6 +12,7 @@
 #include <esp_heap_caps.h>
 
 #include "console_out.h"
+#include "settings.h"
 
 #define TERM_IN_SIZE  2048
 #define TERM_OUT_SIZE 256
@@ -25,6 +26,7 @@ typedef struct
     char system[16];
     volatile bool want_connect;
     volatile bool want_hangup;
+    volatile bool want_escape;
     volatile bool echo;               /* ECKM: echo typing unless the host says not to */
     uint8_t in[TERM_IN_SIZE];         /* host text not read yet */
     int in_len;
@@ -120,6 +122,7 @@ int term_open(int slot, const char *system)
     }
     memcpy(t->system, system, n + 1);
     t->want_hangup = false;
+    t->want_escape = false;
     t->want_connect = true;
     return 0;
 }
@@ -151,6 +154,15 @@ void term_hangup(int slot)
     {
         t->want_connect = false;
         t->want_hangup = true;
+    }
+}
+
+void term_escape(int slot)
+{
+    term_slot *t = slot_at(slot);
+    if (t != NULL && t->open)
+    {
+        t->want_escape = true;
     }
 }
 
@@ -218,6 +230,11 @@ static void slot_connect(term_slot *t, XmsgNode *node, uint32_t now)
     tad_asker_config_default(&cfg, (uint16_t)peer, t->system);
     /* What TADA on the host shows for this session: terminal = slot + 1. */
     cfg.terminal_number = (uint16_t)(slot + 1);
+    /* Terminal type, high byte first (tad_asker.h; settings.h says why it
+     * is a setting). Read from NVS once per session open. */
+    uint16_t ttyp = settings_ttyp();
+    cfg.ttyp[0] = (uint8_t)(ttyp >> 8u);
+    cfg.ttyp[1] = (uint8_t)(ttyp & 0xFFu);
     memset(&cb, 0, sizeof cb);
     cb.ctx = t;
     cb.text_out = cb_text;
@@ -280,6 +297,13 @@ void term_pass(XmsgNode *node, uint32_t now)
                 tad_asker_abort(&t->tad);
             }
             continue;
+        }
+        if (t->want_escape)
+        {
+            t->want_escape = false;
+            /* Refused only before the session is up (tad_asker.h); then the
+             * key is simply lost, as on a terminal before the host answers. */
+            (void)tad_asker_escape(&t->tad, now);
         }
         if (t->out_len > 0 && tad_asker_may_type(&t->tad) && lock())
         {

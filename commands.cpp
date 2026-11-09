@@ -51,6 +51,7 @@ static void handle_link(const char *args);
 static void handle_reach(const char *args);
 static void handle_term(const char *args);
 static void handle_wifi(const char *args);
+static void handle_ttyp(const char *args);
 
 static const command COMMANDS[] =
 {
@@ -63,6 +64,7 @@ static const command COMMANDS[] =
       handle_term },
     { "WIFI",    "WIFI [STATUS]|SSID <name>|PASS <password>|CONNECT - network for telnet",
       handle_wifi },
+    { "TTYP",    "TTYP [n] - Terminal type for new sessions (0 default; 93 = TDV 2200)", handle_ttyp },
     { "BAUD",    "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored)", handle_baud },
     { "CLOCK",   "CLOCK ON|OFF - Run or stop the transmit clock",              handle_clock },
     { "INSPECT", "INSPECT [BAD [0..3]] - Last frame, or n-th newest bad one",  handle_inspect },
@@ -686,6 +688,32 @@ static void handle_wifi(const char *args)
         return;
     }
     console_out_println("Usage: WIFI [STATUS]|SSID <name>|PASS <password>|CONNECT");
+}
+
+/**
+ * @brief TTYP command: show or store the terminal type sent when a session
+ *        opens (settings.h). Sessions already open keep theirs.
+ * @param[in] args  0..65535 decimal, or NULL to show.
+ */
+static void handle_ttyp(const char *args)
+{
+    if (args != NULL && *args != '\0')
+    {
+        char *end = NULL;
+        unsigned long v = strtoul(args, &end, 10);
+        if (end == args || *end != '\0' || v > 65535u)
+        {
+            console_out_println("Usage: TTYP [0..65535]");
+            return;
+        }
+        if (settings_set_ttyp((uint16_t)v) != 0)
+        {
+            console_out_println("Could not store the terminal type.");
+            return;
+        }
+    }
+    console_out_printf("Terminal type %u for sessions opened from now on.\r\n",
+                       (unsigned)settings_ttyp());
 }
 
 void commands_process(char *line)

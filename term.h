@@ -72,6 +72,14 @@ int term_type(int slot, const uint8_t *text, int len);
 void term_hangup(int slot);
 
 /**
+ * @brief Ask for an escape (TAD ESCA) in a slot: what the ESC key does on a
+ *        real terminal, which breaks the running program on the host even
+ *        when it has not granted input (libxmsg tad_asker_escape). The
+ *        caller decides what is a lone ESC (libxmsg term_escape.h).
+ */
+void term_escape(int slot);
+
+/**
  * @brief Take host text collected since the last call.
  * @return Bytes copied; 0 when there is none.
  */

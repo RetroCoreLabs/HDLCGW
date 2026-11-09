@@ -65,6 +65,7 @@ typedef struct
     tn_state tn;
     uint8_t tn_verb;
     bool last_was_cr;
+    TermEscape esc;           /* lone ESC (the escape key) or a function key (libxmsg) */
 } telnet_user;
 
 static telnet_user s_users[TELNET_TASK_USERS];
@@ -142,6 +143,8 @@ static void user_start(telnet_user *u)
     u->tn = TN_DATA;
     u->last_was_cr = false;
     u->session_seen_open = false;
+    /* libxmsg's default 50 ms, as its own telnet bridge uses (host_tad_telnet.c). */
+    term_escape_init(&u->esc, TERM_ESCAPE_DEFAULT_MS);
     u->client.setNoDelay(true);
     user_write(u, NEGOTIATE, sizeof NEGOTIATE);
 
@@ -258,22 +261,39 @@ static void user_byte(telnet_user *u, uint8_t c)
         c = '\r';           /* a client that sends a bare LF for Enter */
     }
     s_stats.bytes_from_user++;
-    (void)term_type(i, &c, 1);
 
-    term_get_status(i, &ts);
-    if (ts.echo)
+    /* The lone-ESC rule (libxmsg term_escape.h, as host_tad_telnet.c does):
+     * an ESC with nothing after it within 50 ms is the escape key and goes to
+     * the host as an ESCA, not as a typed byte; an ESC followed at once by
+     * more bytes is a function key and goes through as text, unchanged. */
+    uint8_t out[2];
+    bool escape = false;
+    int n = term_escape_byte(&u->esc, c, millis(), out, &escape);
+    if (escape)
     {
-        if (c == '\r')
+        term_escape(i);
+    }
+    term_get_status(i, &ts);
+    for (int k = 0; k < n; k++)
+    {
+        uint8_t b = out[k];
+        (void)term_type(i, &b, 1);
+        /* No local echo for a password, a function key's ESC, or the Enter
+         * key: the host sends its own CR LF for the CR (tad_asker.h: after
+         * "sys" + CR the host sent only CR LF). Echoing CR here gave the user
+         * two new lines per Enter (Ronny's log, 2026-11-09 23:37:39: our
+         * CR LF at +9 ms, then the host's CR LF CR LF "R@" at +298 ms). */
+        if (!ts.echo || b == TERM_ESC || b == '\r')
         {
-            user_say(u, "\r\n");
+            continue;
         }
-        else if (c == 8u || c == 127u)
+        if (b == 8u || b == 127u)
         {
             user_say(u, "\b \b");
         }
         else
         {
-            user_write(u, &c, 1);
+            user_write(u, &b, 1);
         }
     }
 }
@@ -305,6 +325,11 @@ static void user_pass(telnet_user *u)
         {
             user_byte(u, buf[k]);
         }
+    }
+    /* A held ESC with no byte after it for 50 ms: the escape key. */
+    if (term_escape_poll(&u->esc, millis()))
+    {
+        term_escape(i);
     }
     while ((n = term_read(i, buf, (int)sizeof buf)) > 0)
     {

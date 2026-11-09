@@ -89,4 +89,24 @@ int settings_set_wifi_ssid(const char *ssid);
  */
 int settings_set_wifi_pass(const char *pass);
 
+/**
+ * @brief Terminal type sent in each terminal session's setup (TAD TTYP).
+ *
+ * SINTRAN copies these two bytes straight into the host's terminal type (the
+ * J driver's BDTTYP, tad_asker.h). Every real asker in the captures sends 0,
+ * so 0 is the default. Lead from the libxmsg session, not proven: a TDV
+ * HELP key (ESC [ 4 6 _) got BEL over TAD, but worked on a direct terminal
+ * of type 93.
+ *
+ * @return The stored type, 0 when none is stored.
+ */
+uint16_t settings_ttyp(void);
+
+/**
+ * @brief Store the terminal type; used for sessions opened after this.
+ * @param[in] ttyp  0..65535.
+ * @return 0 or -1.
+ */
+int settings_set_ttyp(uint16_t ttyp);
+
 #endif /* SETTINGS_H */

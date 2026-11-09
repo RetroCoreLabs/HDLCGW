@@ -76,6 +76,54 @@ void node_task_request_stop(void);
 void node_task_request_reach(void);
 
 /**
+ * @brief Ask for a terminal session (TAD CONNECT-TO) to a system on the peer.
+ *        The node task sends the connect letter on its next pass once the
+ *        link is ready. Host text collects in a buffer (node_task_term_read).
+ * @param[in] system  System name as XROUT knows it, e.g. "D100"; at most 15
+ *                    characters.
+ * @return 0 when queued, -1 when the name is too long or a session is open.
+ */
+int node_task_term_connect(const char *system);
+
+/**
+ * @brief Queue text to type into the session. CR is not added. The node
+ *        task sends it as soon as the host grants input.
+ * @param[in] text  Bytes.
+ * @param[in] len   Number of bytes.
+ * @return Bytes queued (fewer when the buffer is full), -1 with no session.
+ */
+int node_task_term_type(const uint8_t *text, int len);
+
+/** @brief Ask the node task to end the session (DCON). */
+void node_task_term_hangup(void);
+
+/**
+ * @brief Take host text collected since the last call.
+ * @param[out] out  Receives the bytes.
+ * @param[in]  max  Size of out.
+ * @return Bytes copied; 0 when there is none.
+ */
+int node_task_term_read(uint8_t *out, int max);
+
+/** @brief What the terminal session is doing, for TERM STATUS. */
+typedef struct
+{
+    const char *state;     /**< tad_asker_state_name(), or "none" */
+    int error;             /**< the asker's error on FAILED, else 0 */
+    bool may_type;         /**< the host has granted input */
+    uint32_t bytes_in;     /**< host text bytes received */
+    uint32_t bytes_out;    /**< typed bytes sent */
+    uint32_t lost_in;      /**< host text bytes dropped, buffer full (read it with TERM SHOW) */
+    int queued_out;        /**< typed bytes waiting for an input grant */
+} node_term_status;
+
+/**
+ * @brief Read the terminal session state.
+ * @param[out] out  Filled.
+ */
+void node_task_term_status(node_term_status *out);
+
+/**
  * @brief Latest status.
  * @param[out] out  Filled with a copy.
  */

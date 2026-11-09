@@ -60,6 +60,211 @@ static uint8_t s_bad_frames[BAD_HISTORY][LINE_FRAME_MAX];
 static int s_bad_lens[BAD_HISTORY];
 static int s_bad_next = 0;
 
+/* ------------------------------------------------------- terminal session */
+
+/* One TAD terminal session (libxmsg tad_asker.h), the first real XMSG session
+ * XMSGGW runs; telnet users get one each later. The asker lives in this task
+ * like the node. Text crosses to the console task through two small buffers
+ * under s_term_lock. */
+#define TERM_IN_SIZE  2048
+#define TERM_OUT_SIZE 256
+static TadAsker s_tad;
+static bool s_tad_open = false;            /* initialised and attached, until CLOSED/FAILED */
+static char s_term_system[16];
+static volatile bool s_term_want_connect = false;
+static volatile bool s_term_want_hangup = false;
+static SemaphoreHandle_t s_term_lock = NULL;
+static uint8_t s_term_in[TERM_IN_SIZE];    /* host text not yet read by TERM SHOW */
+static int s_term_in_len = 0;
+static uint32_t s_term_lost_in = 0;
+static uint8_t s_term_out[TERM_OUT_SIZE];  /* typed text waiting for an input grant */
+static int s_term_out_len = 0;
+
+/** @brief Take the text buffer lock; false when it could not be had in 50 ms. */
+static bool term_lock(void)
+{
+    return s_term_lock != NULL && xSemaphoreTake(s_term_lock, pdMS_TO_TICKS(50)) == pdTRUE;
+}
+
+/** @brief Asker callback: host text, kept for TERM SHOW. */
+static void term_text(void *ctx, const uint8_t *bytes, size_t len)
+{
+    (void)ctx;
+    if (!term_lock())
+    {
+        s_term_lost_in += (uint32_t)len;
+        return;
+    }
+    for (size_t i = 0; i < len; i++)
+    {
+        if (s_term_in_len < TERM_IN_SIZE)
+        {
+            s_term_in[s_term_in_len++] = bytes[i];
+        }
+        else
+        {
+            s_term_lost_in++;
+        }
+    }
+    xSemaphoreGive(s_term_lock);
+}
+
+/** @brief Asker callback: state changes, as log lines. */
+static void term_state(void *ctx, TadAskerState state, int error)
+{
+    (void)ctx;
+    console_out_log(CONTROL_FRAME_LOG_INFO, "Terminal session: %s%s%d",
+                    tad_asker_state_name(state), (error != 0) ? ", error " : "",
+                    (error != 0) ? error : 0);
+}
+
+/** @brief Asker callback: the host's login ended; hang up, as the asker expects. */
+static void term_logged_out(void *ctx)
+{
+    (void)ctx;
+    console_out_log(CONTROL_FRAME_LOG_INFO, "Terminal session: host logged out, hanging up");
+    s_term_want_hangup = true;
+}
+
+int node_task_term_connect(const char *system)
+{
+    if (strlen(system) >= sizeof s_term_system || s_tad_open || s_term_want_connect)
+    {
+        return -1;
+    }
+    memcpy(s_term_system, system, strlen(system) + 1);
+    s_term_want_connect = true;
+    return 0;
+}
+
+int node_task_term_type(const uint8_t *text, int len)
+{
+    int took = 0;
+    if (!s_tad_open)
+    {
+        return -1;
+    }
+    if (!term_lock())
+    {
+        return 0;
+    }
+    while (took < len && s_term_out_len < TERM_OUT_SIZE)
+    {
+        s_term_out[s_term_out_len++] = text[took++];
+    }
+    xSemaphoreGive(s_term_lock);
+    return took;
+}
+
+void node_task_term_hangup(void)
+{
+    s_term_want_hangup = true;
+}
+
+int node_task_term_read(uint8_t *out, int max)
+{
+    int n;
+    if (!term_lock())
+    {
+        return 0;
+    }
+    n = (s_term_in_len < max) ? s_term_in_len : max;
+    memcpy(out, s_term_in, (size_t)n);
+    memmove(s_term_in, &s_term_in[n], (size_t)(s_term_in_len - n));
+    s_term_in_len -= n;
+    xSemaphoreGive(s_term_lock);
+    return n;
+}
+
+void node_task_term_status(node_term_status *out)
+{
+    /* Read from the console task without the node's lock: a status line,
+     * at most one pass old, as node_task_get_status. */
+    out->state = (s_tad_open || s_tad.state != TAD_ASKER_IDLE) ? tad_asker_state_name(s_tad.state)
+                                                                : "none";
+    out->error = s_tad.error;
+    out->may_type = s_tad_open && tad_asker_may_type(&s_tad);
+    out->bytes_in = s_tad.stats.text_bytes_in;
+    out->bytes_out = s_tad.stats.text_bytes_out;
+    out->lost_in = s_term_lost_in;
+    out->queued_out = s_term_out_len;
+}
+
+/**
+ * @brief The terminal session's part of a node task pass: connect, type,
+ *        hang up. Runs only in the node task.
+ * @param[in] now  millis().
+ */
+static void term_pass(uint32_t now)
+{
+    if (s_term_want_connect && xmsg_node_is_ready(&s_node))
+    {
+        int32_t peer = lapb_peer_node(&s_node.lapb);
+        TadAskerConfig cfg;
+        TadAskerCallbacks cb;
+        s_term_want_connect = false;
+        if (peer < 0)
+        {
+            console_out_log(CONTROL_FRAME_LOG_WARN, "Terminal session: peer not known yet");
+            return;
+        }
+        tad_asker_config_default(&cfg, (uint16_t)peer, s_term_system);
+        memset(&cb, 0, sizeof cb);
+        cb.text_out = term_text;
+        cb.state = term_state;
+        cb.logged_out = term_logged_out;
+        if (term_lock())
+        {
+            s_term_in_len = 0;
+            s_term_out_len = 0;
+            xSemaphoreGive(s_term_lock);
+        }
+        s_term_lost_in = 0;
+        if (tad_asker_init(&s_tad, &cfg, &cb) != XMSG_OK)
+        {
+            console_out_log(CONTROL_FRAME_LOG_ERROR, "Terminal session: bad system name");
+            return;
+        }
+        int rc = tad_asker_connect(&s_tad, &s_node, now);
+        if (rc != XMSG_OK)
+        {
+            console_out_log(CONTROL_FRAME_LOG_ERROR, "Terminal session: connect refused, %d", rc);
+            return;
+        }
+        s_tad_open = true;
+    }
+    if (!s_tad_open)
+    {
+        return;
+    }
+    if (s_tad.state == TAD_ASKER_CLOSED || s_tad.state == TAD_ASKER_FAILED)
+    {
+        s_tad_open = false;   /* the asker has detached itself from the node */
+        s_term_want_hangup = false;
+        return;
+    }
+    if (s_term_want_hangup)
+    {
+        s_term_want_hangup = false;
+        if (tad_asker_hangup(&s_tad, now) != XMSG_OK)
+        {
+            tad_asker_abort(&s_tad);
+        }
+        return;
+    }
+    if (s_term_out_len > 0 && tad_asker_may_type(&s_tad) && term_lock())
+    {
+        int n = (s_term_out_len < TAD_MAX_DATA) ? s_term_out_len : TAD_MAX_DATA;
+        int took = tad_asker_write(&s_tad, s_term_out, (size_t)n, now);
+        if (took > 0)
+        {
+            memmove(s_term_out, &s_term_out[took], (size_t)(s_term_out_len - took));
+            s_term_out_len -= took;
+        }
+        xSemaphoreGive(s_term_lock);
+    }
+}
+
 /* ------------------------------------------------------------ transport */
 
 /**
@@ -203,6 +408,10 @@ void node_task_init(void)
     XmsgNodeCallbacks cb;
     uint16_t own = settings_node();
 
+    if (s_term_lock == NULL)
+    {
+        s_term_lock = xSemaphoreCreateMutex();
+    }
     hdlc_decoder_reset(&s_dec);
     hdlc_decoder_set_buffer(&s_dec, s_rx_frame, (int)sizeof s_rx_frame);
 
@@ -360,6 +569,7 @@ void node_task_run(void *params)
                                     (long)peer);
                 }
             }
+            term_pass(now);
             (void)xmsg_node_tick(&s_node, now);
         }
         update_status();

@@ -48,6 +48,7 @@ static void handle_exit(const char *args);
 static void handle_node(const char *args);
 static void handle_link(const char *args);
 static void handle_reach(const char *args);
+static void handle_term(const char *args);
 
 static const command COMMANDS[] =
 {
@@ -56,6 +57,8 @@ static const command COMMANDS[] =
     { "NODE",    "NODE [n] - Show or store our node number (used after RESET)", handle_node },
     { "LINK",    "LINK START|STOP - Start the link or take it down",           handle_link },
     { "REACH",   "Ask the peer 'are you there?'; STAT shows asked / answered", handle_reach },
+    { "TERM",    "TERM CONNECT <system>|TYPE <text>|SHOW|STATUS|HANGUP - terminal session",
+      handle_term },
     { "BAUD",    "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored)", handle_baud },
     { "CLOCK",   "CLOCK ON|OFF - Run or stop the transmit clock",              handle_clock },
     { "INSPECT", "INSPECT [BAD [0..3]] - Last frame, or n-th newest bad one",  handle_inspect },
@@ -493,6 +496,120 @@ static void handle_reach(const char *args)
     console_out_printf("Reachability request to node %ld queued (nothing new is sent while an "
                        "earlier one waits for its answer). Before it: sent %u, answered %u.\r\n", (long)st.peer_node, (unsigned)st.resyncs_asked,
                        (unsigned)st.resyncs_done);
+}
+
+/**
+ * @brief Print the host text collected since the last SHOW. Bit 7 is
+ *        cleared for display (a host may send parity); control bytes other
+ *        than CR, LF, BS and TAB are shown as <xx>.
+ */
+static void term_show(void)
+{
+    uint8_t buf[128];
+    int n;
+    int total = 0;
+
+    while ((n = node_task_term_read(buf, (int)sizeof buf)) > 0)
+    {
+        for (int i = 0; i < n; i++)
+        {
+            uint8_t c = (uint8_t)(buf[i] & 0x7Fu);
+            if (c >= 32u || c == '\r' || c == '\n' || c == '\b' || c == '\t')
+            {
+                char s[2] = { (char)c, '\0' };
+                console_out_print(s);
+            }
+            else
+            {
+                console_out_printf("<%02X>", (unsigned)c);
+            }
+        }
+        total += n;
+    }
+    console_out_printf("\r\n[%d bytes of host text]\r\n", total);
+}
+
+/**
+ * @brief TERM command: one terminal session to a system on the peer.
+ * @param[in] args  CONNECT <system>, TYPE <text> (CR added), SHOW, STATUS
+ *                  or HANGUP.
+ */
+static void handle_term(const char *args)
+{
+    if (args == NULL)
+    {
+        args = "";
+    }
+    if (strncasecmp(args, "CONNECT", 7) == 0)
+    {
+        const char *sys = args + 7;
+        while (*sys == ' ')
+        {
+            sys++;
+        }
+        if (*sys == '\0')
+        {
+            console_out_println("Usage: TERM CONNECT <system>, for example TERM CONNECT D100");
+        }
+        else if (node_task_term_connect(sys) != 0)
+        {
+            console_out_println("Not started: a session is open, or the name is too long.");
+        }
+        else
+        {
+            console_out_printf("Connect to %s asked for; TERM STATUS and TERM SHOW follow it.\r\n",
+                               sys);
+        }
+    }
+    else if (strncasecmp(args, "TYPE", 4) == 0)
+    {
+        const char *text = args + 4;
+        uint8_t line[200];
+        int len;
+        if (*text == ' ')
+        {
+            text++;
+        }
+        len = (int)strlen(text);
+        if (len > (int)sizeof line - 1)
+        {
+            len = (int)sizeof line - 1;
+        }
+        memcpy(line, text, (size_t)len);
+        line[len++] = '\r';
+        int took = node_task_term_type(line, len);
+        if (took < 0)
+        {
+            console_out_println("No session open.");
+        }
+        else
+        {
+            console_out_printf("%d of %d bytes queued (CR included).\r\n", took, len);
+        }
+    }
+    else if (strcasecmp(args, "SHOW") == 0)
+    {
+        term_show();
+    }
+    else if (strcasecmp(args, "HANGUP") == 0)
+    {
+        node_task_term_hangup();
+        console_out_println("Hangup asked for.");
+    }
+    else if (strcasecmp(args, "STATUS") == 0 || *args == '\0')
+    {
+        node_term_status ts;
+        node_task_term_status(&ts);
+        console_out_printf("Session %s, error %d, %s; host text in %u bytes (lost %u), typed out "
+                           "%u bytes, %d waiting\r\n",
+                           ts.state, ts.error, ts.may_type ? "may type" : "may not type",
+                           (unsigned)ts.bytes_in, (unsigned)ts.lost_in, (unsigned)ts.bytes_out,
+                           ts.queued_out);
+    }
+    else
+    {
+        console_out_println("Usage: TERM CONNECT <system>|TYPE <text>|SHOW|STATUS|HANGUP");
+    }
 }
 
 void commands_process(char *line)

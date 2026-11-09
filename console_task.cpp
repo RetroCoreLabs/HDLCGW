@@ -19,9 +19,9 @@
 #include "console_out.h"
 #include "libhdlc/control_frame.h"
 #include "libhdlc/hdlc.h"
-#include "spi_rx_task.h"
+#include "libhdlc/esp32s2/spi_rx_task.h"
 #include "usb_rx.h"
-#include "spi_tx_task.h"
+#include "libhdlc/esp32s2/spi_tx_task.h"
 #include "usb_tx_task.h"
 #include "wifi_task.h"
 

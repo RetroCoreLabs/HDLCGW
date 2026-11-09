@@ -342,15 +342,17 @@ void node_task_run(void *params)
             {
                 int32_t peer = lapb_peer_node(&s_node.lapb);
                 /* libxmsg sends nothing while an earlier request still waits for its answer
-                 * (xmsg_node_resync returns XMSG_OK then too), so only a call made with none
-                 * waiting is a request on the line; only those are counted. */
+                 * and is younger than cfg.resync_timeout_ms (xmsg_node_resync returns XMSG_OK
+                 * then too); after that it sends again (libxmsg 1fb0743). A request went out
+                 * when none was waiting, or when the send time changed. */
                 bool waiting = s_node.resync_pending;
+                uint32_t sent_before = s_node.resync_sent_ms;
                 /* The peer number comes from LAPB's first frames; it is known once the link is
                  * up. Until then try again on the next pass. */
                 if (peer >= 0 && xmsg_node_resync(&s_node, (uint16_t)peer, now) == XMSG_OK)
                 {
                     s_want_resync = false;
-                    if (!waiting)
+                    if (!waiting || s_node.resync_sent_ms != sent_before)
                     {
                         s_resyncs++;
                     }

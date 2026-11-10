@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1264" width="1240" height="1264" font-family="Segoe UI, Arial, sans-serif">
+<defs><marker id="aG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#1b8a3a"/></marker><marker id="aB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#1f5fbf"/></marker></defs>
+<title>HDLC PCB wiring, ESP32-S2 Mini and MAX3490E</title>
+<rect width="1240" height="1264" fill="#ffffff"/>
+<text x="30" y="34" font-size="20" text-anchor="start" fill="#1b1b1b" font-weight="bold">RC422Dev HDLC: ESP32-S2 board, 2 x MAX3490E, plugs straight into the ND (ND manual pin numbers)</text>
+<text x="30" y="58" font-size="13" text-anchor="start" fill="#555" font-weight="normal">Green = TX (board to ND), blue = RX (ND to board), orange = jumper wire. Powered from the USB cable. Amber tags [A1]... mark assumptions (listed at the bottom).</text>
+<rect x="30" y="80" width="300" height="790" rx="8" fill="#fbfbfb" stroke="#777" stroke-width="2"/>
+<text x="45" y="104" font-size="14" text-anchor="start" fill="#1b1b1b" font-weight="bold">Board A: male DB-25 plug</text>
+<text x="45" y="122" font-size="11.5" text-anchor="start" fill="#a35f00" font-weight="normal">pins: ND manual numbers</text>
+<text x="45" y="148" font-size="12" text-anchor="start" fill="#1b8a3a" font-weight="bold">DATA chip U1: board to ND</text>
+<circle cx="300" cy="170" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="284" y="174" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">16  data +</text>
+<circle cx="300" cy="206" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="284" y="210" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">4  data -</text>
+<text x="45" y="224" font-size="12" text-anchor="start" fill="#1f5fbf" font-weight="bold">DATA chip U1: ND to board</text>
+<circle cx="300" cy="242" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="284" y="246" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">14  data +</text>
+<circle cx="300" cy="278" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="284" y="282" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">2  data -</text>
+<text x="45" y="322" font-size="12" text-anchor="start" fill="#1b8a3a" font-weight="bold">CLOCK chip U2: board to ND</text>
+<circle cx="300" cy="360" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="284" y="364" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">18  clock +</text>
+<circle cx="300" cy="396" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="284" y="400" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">6  clock -</text>
+<circle cx="300" cy="432" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="284" y="436" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">15  clock -</text>
+<circle cx="300" cy="504" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="284" y="508" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">3  clock +</text>
+<line x1="300" y1="440" x2="300" y2="460" stroke="#e07b00" stroke-width="6" stroke-linecap="round"/>
+<line x1="300" y1="512" x2="300" y2="532" stroke="#e07b00" stroke-width="6" stroke-linecap="round"/>
+<circle cx="300" cy="468" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="284" y="472" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">17  jumper to 15</text>
+<circle cx="300" cy="540" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="284" y="544" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">5  jumper to 3</text>
+<text x="45" y="582" font-size="12" text-anchor="start" fill="#e07b00" font-weight="bold">Jumper wires only (orange = wired together)</text>
+<line x1="300" y1="612" x2="300" y2="668" stroke="#e07b00" stroke-width="6" stroke-linecap="round"/>
+<line x1="300" y1="726" x2="300" y2="746" stroke="#e07b00" stroke-width="6" stroke-linecap="round"/>
+<circle cx="300" cy="604" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="284" y="608" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">11  jumper to 24 + 23</text>
+<circle cx="300" cy="640" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="284" y="644" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">24  jumper</text>
+<circle cx="300" cy="676" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="284" y="680" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">23  jumper</text>
+<circle cx="300" cy="718" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="284" y="722" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">22  jumper to 10</text>
+<circle cx="300" cy="754" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="284" y="758" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">10  jumper</text>
+<text x="45" y="790" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="bold">Ground</text>
+<circle cx="300" cy="814" r="7" fill="#fff" stroke="#000" stroke-width="2"/>
+<text x="284" y="818" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">8  GND</text>
+<rect x="470" y="130" width="220" height="170" rx="8" fill="#f2faf4" stroke="#1b8a3a" stroke-width="2"/>
+<rect x="470" y="130" width="220" height="28" rx="8" fill="#1b8a3a" stroke="#1b8a3a" stroke-width="2"/>
+<text x="482" y="149" font-size="13.5" text-anchor="start" fill="#fff" font-weight="bold">U1  MAX3490E  DATA</text>
+<text x="482" y="290" font-size="11" text-anchor="start" fill="#555" font-weight="normal"></text>
+<rect x="470" y="320" width="220" height="260" rx="8" fill="#f2faf4" stroke="#1b8a3a" stroke-width="2"/>
+<rect x="470" y="320" width="220" height="28" rx="8" fill="#1b8a3a" stroke="#1b8a3a" stroke-width="2"/>
+<text x="482" y="339" font-size="13.5" text-anchor="start" fill="#fff" font-weight="bold">U2  MAX3490E  CLOCK</text>
+<text x="482" y="570" font-size="11" text-anchor="start" fill="#555" font-weight="normal"></text>
+<circle cx="470" cy="170" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="484" y="174" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="bold">Y +</text>
+<text x="512" y="174" font-size="11" text-anchor="start" fill="#555" font-weight="normal">pin 5</text>
+<circle cx="470" cy="206" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="484" y="210" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="bold">Z -</text>
+<text x="512" y="210" font-size="11" text-anchor="start" fill="#555" font-weight="normal">pin 6</text>
+<circle cx="470" cy="242" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="484" y="246" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="bold">A +</text>
+<text x="512" y="246" font-size="11" text-anchor="start" fill="#555" font-weight="normal">pin 8</text>
+<circle cx="470" cy="278" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="484" y="282" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="bold">B -</text>
+<text x="512" y="282" font-size="11" text-anchor="start" fill="#555" font-weight="normal">pin 7</text>
+<circle cx="470" cy="360" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="484" y="364" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="bold">Y +</text>
+<text x="512" y="364" font-size="11" text-anchor="start" fill="#555" font-weight="normal">pin 5</text>
+<circle cx="470" cy="396" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="484" y="400" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="bold">Z -</text>
+<text x="512" y="400" font-size="11" text-anchor="start" fill="#555" font-weight="normal">pin 6</text>
+<circle cx="470" cy="432" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="484" y="436" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="bold">A</text>
+<text x="512" y="436" font-size="11" text-anchor="start" fill="#555" font-weight="normal">pin 8</text>
+<circle cx="470" cy="504" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="484" y="508" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="bold">B</text>
+<text x="512" y="508" font-size="11" text-anchor="start" fill="#555" font-weight="normal">pin 7</text>
+<circle cx="690" cy="180" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="676" y="184" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="bold">DI</text>
+<text x="640" y="184" font-size="11" text-anchor="end" fill="#555" font-weight="normal">pin 3</text>
+<circle cx="690" cy="272" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="676" y="276" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="bold">RO</text>
+<text x="640" y="276" font-size="11" text-anchor="end" fill="#555" font-weight="normal">pin 2</text>
+<circle cx="690" cy="212" r="7" fill="#fff" stroke="#888" stroke-width="2"/>
+<text x="676" y="216" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="bold">VCC</text>
+<text x="640" y="216" font-size="11" text-anchor="end" fill="#555" font-weight="normal">pin 1</text>
+<circle cx="690" cy="240" r="7" fill="#fff" stroke="#888" stroke-width="2"/>
+<text x="676" y="244" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="bold">GND</text>
+<text x="640" y="244" font-size="11" text-anchor="end" fill="#555" font-weight="normal">pin 4</text>
+<circle cx="690" cy="370" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="676" y="374" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="bold">DI</text>
+<text x="640" y="374" font-size="11" text-anchor="end" fill="#555" font-weight="normal">pin 3</text>
+<circle cx="690" cy="520" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="676" y="524" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="bold">RO</text>
+<text x="640" y="524" font-size="11" text-anchor="end" fill="#555" font-weight="normal">pin 2</text>
+<circle cx="690" cy="402" r="7" fill="#fff" stroke="#888" stroke-width="2"/>
+<text x="676" y="406" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="bold">VCC</text>
+<text x="640" y="406" font-size="11" text-anchor="end" fill="#555" font-weight="normal">pin 1</text>
+<circle cx="690" cy="430" r="7" fill="#fff" stroke="#888" stroke-width="2"/>
+<text x="676" y="434" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="bold">GND</text>
+<text x="640" y="434" font-size="11" text-anchor="end" fill="#555" font-weight="normal">pin 4</text>
+<path d="M470 170 C385.0 170 385.0 170 300 170" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aG)"/>
+<path d="M470 206 C385.0 206 385.0 206 300 206" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aG)"/>
+<path d="M470 360 C385.0 360 385.0 360 300 360" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aG)"/>
+<path d="M470 396 C385.0 396 385.0 396 300 396" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aG)"/>
+<path d="M300 242 C385.0 242 385.0 242 470 242" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aB)"/>
+<path d="M300 278 C385.0 278 385.0 278 470 278" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aB)"/>
+<path d="M300 432 C385.0 432 385.0 432 470 432" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aB)"/>
+<path d="M300 504 C385.0 504 385.0 504 470 504" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aB)"/>
+<rect x="880" y="90" width="330" height="690" rx="8" fill="#fbfbfb" stroke="#777" stroke-width="2"/>
+<text x="895" y="114" font-size="14" text-anchor="start" fill="#1b1b1b" font-weight="bold">LOLIN S2 Mini (ESP32-S2)</text>
+<text x="895" y="134" font-size="12" text-anchor="start" fill="#555" font-weight="normal">USB cable to the laptop = power + serial</text>
+<circle cx="880" cy="180" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="896" y="184" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">GPIO 11</text>
+<text x="962" y="184" font-size="11.5" text-anchor="start" fill="#555" font-weight="normal">TX data</text>
+<circle cx="880" cy="272" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="896" y="276" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">GPIO 9</text>
+<text x="962" y="276" font-size="11.5" text-anchor="start" fill="#555" font-weight="normal">RX data</text>
+<circle cx="880" cy="370" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="896" y="374" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">GPIO 7</text>
+<text x="962" y="374" font-size="11.5" text-anchor="start" fill="#555" font-weight="normal">TX clock</text>
+<circle cx="880" cy="520" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="896" y="524" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">GPIO 12</text>
+<text x="962" y="524" font-size="11.5" text-anchor="start" fill="#555" font-weight="normal">RX clock</text>
+<circle cx="880" cy="640" r="7" fill="#fff" stroke="#888" stroke-width="2"/>
+<text x="896" y="644" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">3V3</text>
+<text x="930" y="644" font-size="11.5" text-anchor="start" fill="#555" font-weight="normal">feeds both chips (VCC, pin 1)</text>
+<circle cx="880" cy="676" r="7" fill="#fff" stroke="#888" stroke-width="2"/>
+<text x="896" y="680" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">GND</text>
+<text x="930" y="680" font-size="11.5" text-anchor="start" fill="#555" font-weight="normal">ground, common with the DB-25 pin 8</text>
+<circle cx="880" cy="712" r="7" fill="#fff" stroke="#888" stroke-width="2"/>
+<text x="896" y="716" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">5V</text>
+<text x="930" y="716" font-size="11.5" text-anchor="start" fill="#555" font-weight="normal">not used (chips run on 3.3 V)</text>
+<path d="M880 180 C785.0 180 785.0 180 690 180" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aG)"/>
+<path d="M690 272 C785.0 272 785.0 272 880 272" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aB)"/>
+<path d="M880 370 C785.0 370 785.0 370 690 370" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aG)"/>
+<path d="M690 520 C785.0 520 785.0 520 880 520" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aB)"/>
+<line x1="690" y1="212" x2="724" y2="212" stroke="#c0392b" stroke-width="2" stroke-linecap="round"/>
+<text x="730" y="216" font-size="11.5" text-anchor="start" fill="#c0392b" font-weight="bold">3V3 + 100 nF to GND</text>
+<line x1="690" y1="402" x2="724" y2="402" stroke="#c0392b" stroke-width="2" stroke-linecap="round"/>
+<text x="730" y="406" font-size="11.5" text-anchor="start" fill="#c0392b" font-weight="bold">3V3 + 100 nF to GND</text>
+<line x1="690" y1="240" x2="724" y2="240" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+<text x="730" y="244" font-size="11.5" text-anchor="start" fill="#000" font-weight="bold">GND</text>
+<line x1="690" y1="430" x2="724" y2="430" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+<text x="730" y="434" font-size="11.5" text-anchor="start" fill="#000" font-weight="bold">GND</text>
+<line x1="307" y1="814" x2="420" y2="814" stroke="#1b1b1b" stroke-width="2" stroke-linecap="round"/>
+<text x="426" y="818" font-size="11.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">to GND (same ground as chips and ESP)</text>
+<text x="30" y="900" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">Legend:</text>
+<line x1="100" y1="896" x2="140" y2="896" stroke="#1b8a3a" stroke-width="3" stroke-linecap="round"/>
+<text x="146" y="900" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">TX: board to ND</text>
+<line x1="280" y1="896" x2="320" y2="896" stroke="#1f5fbf" stroke-width="3" stroke-linecap="round"/>
+<text x="326" y="900" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">RX: ND to board</text>
+<line x1="460" y1="896" x2="500" y2="896" stroke="#e07b00" stroke-width="5" stroke-linecap="round"/>
+<text x="506" y="900" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">jumper wire</text>
+<text x="30" y="936" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">EVIDENCE</text>
+<text x="30" y="956" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- MAX3490 pins (VCC 1, RO 2, DI 3, GND 4, Y 5, Z 6, B 7, A 8), supply 3.0 to 3.6 V, no enable pins, Y non-inverting, Z inverting: MAX3483-MAX3491 datasheet pages 7 and 8 (Figure 2) and page 12 (function tables).</text>
+<text x="30" y="974" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">  The repo copy docs/MAX3483-MAX3491.pdf has only two pages; the full datasheet was downloaded to read the pin table.</text>
+<text x="30" y="992" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- ND pins, from the ND manual (sections 2-20 page 7 and 2-22 page 5): the ND OUTPUTS data on 14 (+) and 2 (-) and clock on 3 (+) and 15 (-); it takes INPUT data on 16 (+) and 4 (-) and clock on 18 (+) and 6 (-).</text>
+<text x="30" y="1010" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- ESP32-S2 Mini pins: handoff note 2026-11-08 (a working test against the Pico): TX data GPIO 11, TX clock GPIO 7, RX data GPIO 9, RX clock GPIO 12, 3.3 V logic straight, 19200 bit/s, 25 ns input glitch filter on the two inputs.</text>
+<text x="30" y="1028" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- Old breadboard wiring, converted to the ND&#x27;s numbers because your cable was flipped: drivers on 16/4 and 18/6, receivers on 14/2 and 15/3, plus the four jumpers.</text>
+<text x="30" y="1052" font-size="13" text-anchor="start" fill="#a35f00" font-weight="bold">ASSUMED - check before building</text>
+<text x="30" y="1072" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A1] The conversion from your printed numbers to the ND&#x27;s numbers comes from your jumper beeps, not from a pin-by-pin test of the flipped cable.</text>
+<text x="30" y="1090" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A2] The S2 Mini&#x27;s 3V3 pin can feed two MAX3490 (a few milliamps) and its 5V pin is the USB 5 V. Both are NOT checked against the board&#x27;s schematic. The 5V pin is not used here.</text>
+<text x="30" y="1108" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A3] The ND&#x27;s socket is female, so the PCB needs a MALE DB-25 plug. This is Ronny&#x27;s statement, not checked on the machine.</text>
+<text x="30" y="1126" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A4] Receive clock: A on pin 15, B on pin 3, copied from the old wiring. It is not proven that a real ND needs this.</text>
+<text x="30" y="1144" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A5] The jumpers (3-5, 15-17, 11-24-23, 22-10) are what the 3015 card&#x27;s cable plug has. 5 and 17 are also the MEGALINK busy-input pins, so this board suits the 3015 only. Not verified that the ND needs them.</text>
+<text x="30" y="1162" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">     Put them on solder jumpers so they can be removed.</text>
+<text x="30" y="1180" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A6] Not drawn: line termination (120 ohm), surge protection, USB connector details. The firmware for the ESP32 is in its own project, not in this repo (the Pico PIO code here is not used).</text>
+<text x="30" y="1198" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">Chips: MAX3490E, 3.3 V, full duplex, no enable pins (datasheet). Through-hole PDIP-8 is MAX3490EEPA, SOIC-8 is MAX3490EESA (your RS422_3v3_Transceivers.md).</text>
+<text x="30" y="1216" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">Target speed: at most 307.2 kbps (MEGALINK 983 kbps and busy not supported). The MAX3490 is rated 10 Mbps.</text>
+</svg>

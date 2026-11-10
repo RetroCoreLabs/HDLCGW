@@ -22,6 +22,8 @@
 #include <libxmsg/xrout/xrout_names_walk.h>
 #include <libxmsg/xrout/xrout_walk.h>
 
+#include "libhdlc/esp32s2/spi_tx_task.h"
+
 #include "console_out.h"
 #include "names.h"
 #include "node_task.h"
@@ -286,7 +288,8 @@ static void svc_link_info(void *ctx, TermLinkInfo *li)
     li->link_up = st.up;
     li->link_ready = st.ready;
     li->transport = "HDLC line (ESP32-S2)";
-    li->line_bps = settings_rate();
+    /* The rate the line really runs at; settings_rate() is 0 when none is stored. */
+    li->line_bps = spi_tx_task_bit_rate();
     li->line_is_tcp = false;
     li->frames_in = st.frames_in;
     li->frames_out = st.frames_out;

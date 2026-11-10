@@ -1,0 +1,194 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1330" width="1500" height="1330" font-family="Segoe UI, Arial, sans-serif">
+<defs><marker id="aT" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#1b8a3a"/></marker><marker id="aR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#1f5fbf"/></marker></defs>
+<rect width="1500" height="1330" fill="#ffffff"/>
+<text x="30" y="34" font-size="20" text-anchor="start" fill="#1b1b1b" font-weight="bold">RC422Dev HDLC breadboard: BREADBOARD through your flipped cable (numbers as printed on your board)</text>
+<text x="30" y="58" font-size="13" text-anchor="start" fill="#555" font-weight="normal">Three boards: A = DB-25 connector board, B = four MAX485 modules, C = Pico + level shifter. Green = TX (Pico to ND), blue = RX (ND to Pico), orange = strap. Amber tags [A1]... mark assumptions (listed at the bottom).</text>
+<rect x="30" y="80" width="350" height="770" rx="8" fill="#fbfbfb" stroke="#777" stroke-width="2"/>
+<text x="45" y="104" font-size="15" text-anchor="start" fill="#1b1b1b" font-weight="bold">Board A: DB-25 connector board</text>
+<text x="45" y="122" font-size="12" text-anchor="start" fill="#a35f00" font-weight="normal">numbers = as printed on your DB-25 board</text>
+<text x="45" y="148" font-size="12" text-anchor="start" fill="#1b8a3a" font-weight="bold">To the ND (sent by the Pico)</text>
+<text x="45" y="320" font-size="12" text-anchor="start" fill="#1f5fbf" font-weight="bold">From the ND (heard by the Pico)</text>
+<line x1="200" y1="420" x2="200" y2="440" stroke="#e07b00" stroke-width="6" stroke-linecap="round"/>
+<line x1="200" y1="492" x2="200" y2="512" stroke="#e07b00" stroke-width="6" stroke-linecap="round"/>
+<line x1="200" y1="592" x2="200" y2="648" stroke="#e07b00" stroke-width="6" stroke-linecap="round"/>
+<line x1="200" y1="700" x2="200" y2="720" stroke="#e07b00" stroke-width="6" stroke-linecap="round"/>
+<circle cx="200" cy="448" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="184" y="452" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">9  jumper to 11</text>
+<circle cx="200" cy="520" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="184" y="524" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">22  jumper to 24</text>
+<text x="45" y="562" font-size="12" text-anchor="start" fill="#e07b00" font-weight="bold">Jumper wires only (orange = wired together)</text>
+<circle cx="200" cy="584" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="184" y="588" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">3  jumper to 15 + 16</text>
+<circle cx="200" cy="620" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="184" y="624" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">15  jumper</text>
+<circle cx="200" cy="656" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="184" y="660" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">16  jumper</text>
+<circle cx="200" cy="692" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="184" y="696" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">17  jumper to 4</text>
+<circle cx="200" cy="728" r="7" fill="#fff" stroke="#e07b00" stroke-width="2.5"/>
+<text x="184" y="732" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">4  jumper</text>
+<text x="45" y="768" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="bold">Ground</text>
+<circle cx="200" cy="170" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="184" y="174" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">23  data +</text>
+<circle cx="200" cy="206" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="184" y="210" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">10  data -</text>
+<circle cx="200" cy="242" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="184" y="246" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">21  clock +</text>
+<circle cx="200" cy="278" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="184" y="282" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">8  clock -</text>
+<circle cx="200" cy="340" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="184" y="344" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">25  data +</text>
+<circle cx="200" cy="376" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="184" y="380" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">12  data -</text>
+<circle cx="200" cy="412" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="184" y="416" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">11  clock +</text>
+<circle cx="200" cy="484" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="184" y="488" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">24  clock -</text>
+<circle cx="200" cy="790" r="7" fill="#fff" stroke="#000" stroke-width="2"/>
+<text x="184" y="794" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="normal">6  GND</text>
+<text x="214" y="796" font-size="11" text-anchor="start" fill="#555" font-weight="normal">common GND for</text>
+<text x="214" y="810" font-size="11" text-anchor="start" fill="#555" font-weight="normal">all three boards</text>
+<rect x="440" y="80" width="380" height="770" rx="8" fill="#fbfbfb" stroke="#777" stroke-width="2"/>
+<text x="455" y="104" font-size="15" text-anchor="start" fill="#1b1b1b" font-weight="bold">Board B: four MAX485 modules</text>
+<text x="455" y="122" font-size="12" text-anchor="start" fill="#a35f00" font-weight="normal">A / B are the module&#x27;s screw terminals [A2]</text>
+<rect x="470" y="130" width="320" height="150" rx="8" fill="#f2faf4" stroke="#1b8a3a" stroke-width="2"/>
+<rect x="470" y="130" width="320" height="28" rx="8" fill="#1b8a3a"/>
+<text x="482" y="149" font-size="13.5" text-anchor="start" fill="#fff" font-weight="bold">M1  TX data  (Pico to ND)</text>
+<circle cx="470" cy="190" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<circle cx="470" cy="240" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<circle cx="790" cy="190" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="484" y="194" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A</text>
+<text x="484" y="244" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B</text>
+<text x="520" y="194" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">DE + /RE: 5 V</text>
+<text x="520" y="212" font-size="12" text-anchor="start" fill="#555" font-weight="normal">(always sending)</text>
+<text x="776" y="194" font-size="13" text-anchor="end" fill="#1b1b1b" font-weight="bold">DI</text>
+<text x="520" y="244" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
+<rect x="470" y="298" width="320" height="150" rx="8" fill="#f2faf4" stroke="#1b8a3a" stroke-width="2"/>
+<rect x="470" y="298" width="320" height="28" rx="8" fill="#1b8a3a"/>
+<text x="482" y="317" font-size="13.5" text-anchor="start" fill="#fff" font-weight="bold">M2  TX clock  (Pico to ND)</text>
+<circle cx="470" cy="358" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<circle cx="470" cy="408" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<circle cx="790" cy="358" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="484" y="362" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A</text>
+<text x="484" y="412" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B</text>
+<text x="520" y="362" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">DE + /RE: 5 V</text>
+<text x="520" y="380" font-size="12" text-anchor="start" fill="#555" font-weight="normal">(always sending)</text>
+<text x="776" y="362" font-size="13" text-anchor="end" fill="#1b1b1b" font-weight="bold">DI</text>
+<text x="520" y="412" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
+<rect x="470" y="466" width="320" height="150" rx="8" fill="#f3f7fc" stroke="#1f5fbf" stroke-width="2"/>
+<rect x="470" y="466" width="320" height="28" rx="8" fill="#1f5fbf"/>
+<text x="482" y="485" font-size="13.5" text-anchor="start" fill="#fff" font-weight="bold">M3  RX data  (ND to Pico)</text>
+<circle cx="470" cy="526" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<circle cx="470" cy="576" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<circle cx="790" cy="526" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="484" y="530" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A</text>
+<text x="484" y="580" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B</text>
+<text x="520" y="530" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">DE + /RE: GND</text>
+<text x="520" y="548" font-size="12" text-anchor="start" fill="#555" font-weight="normal">(always listening)</text>
+<text x="776" y="530" font-size="13" text-anchor="end" fill="#1b1b1b" font-weight="bold">RO</text>
+<text x="520" y="580" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
+<rect x="470" y="634" width="320" height="150" rx="8" fill="#f3f7fc" stroke="#1f5fbf" stroke-width="2"/>
+<rect x="470" y="634" width="320" height="28" rx="8" fill="#1f5fbf"/>
+<text x="482" y="653" font-size="13.5" text-anchor="start" fill="#fff" font-weight="bold">M4  RX clock  (ND to Pico)</text>
+<circle cx="470" cy="694" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<circle cx="470" cy="744" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<circle cx="790" cy="694" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="484" y="698" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A</text>
+<text x="484" y="748" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B</text>
+<text x="520" y="698" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">DE + /RE: GND</text>
+<text x="520" y="716" font-size="12" text-anchor="start" fill="#555" font-weight="normal">(always listening)</text>
+<text x="776" y="698" font-size="13" text-anchor="end" fill="#1b1b1b" font-weight="bold">RO</text>
+<text x="520" y="748" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
+<path d="M463 190 C335.0 190 335.0 170 207 170" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>
+<path d="M463 240 C335.0 240 335.0 206 207 206" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>
+<path d="M463 358 C335.0 358 335.0 242 207 242" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>
+<path d="M463 408 C335.0 408 335.0 278 207 278" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>
+<path d="M207 340 C335.0 340 335.0 526 463 526" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aR)"/>
+<path d="M207 376 C335.0 376 335.0 576 463 576" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aR)"/>
+<path d="M207 484 C335.0 484 335.0 694 463 694" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aR)"/>
+<path d="M207 412 C335.0 412 335.0 744 463 744" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aR)"/>
+<text x="455" y="828" font-size="11" text-anchor="start" fill="#a35f00" font-weight="normal">[A4] M4 clock wires cross: A from pin 24, B from pin 11</text>
+<rect x="1000" y="80" width="480" height="770" rx="8" fill="#fbfbfb" stroke="#777" stroke-width="2"/>
+<text x="1015" y="104" font-size="15" text-anchor="start" fill="#1b1b1b" font-weight="bold">Board C: level shifter + Pico</text>
+<rect x="1030" y="130" width="170" height="340" rx="8" fill="#f6f6f6" stroke="#444" stroke-width="2"/>
+<rect x="1030" y="130" width="170" height="28" rx="8" fill="#555"/>
+<text x="1042" y="149" font-size="12.5" text-anchor="start" fill="#fff" font-weight="bold">Level shifter TXS0108E</text>
+<text x="1042" y="172" font-size="10.5" text-anchor="start" fill="#555" font-weight="normal">5 V side (left)  3.3 V side (right)</text>
+<circle cx="1030" cy="210" r="7" fill="#fff" stroke="#333" stroke-width="2"/>
+<circle cx="1200" cy="210" r="7" fill="#fff" stroke="#333" stroke-width="2"/>
+<text x="1042" y="214" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">B3</text>
+<text x="1188" y="214" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="bold">A3</text>
+<circle cx="1030" cy="250" r="7" fill="#fff" stroke="#333" stroke-width="2"/>
+<circle cx="1200" cy="250" r="7" fill="#fff" stroke="#333" stroke-width="2"/>
+<text x="1042" y="254" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">B4</text>
+<text x="1188" y="254" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="bold">A4</text>
+<circle cx="1030" cy="290" r="7" fill="#fff" stroke="#333" stroke-width="2"/>
+<circle cx="1200" cy="290" r="7" fill="#fff" stroke="#333" stroke-width="2"/>
+<text x="1042" y="294" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">B5</text>
+<text x="1188" y="294" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="bold">A5</text>
+<circle cx="1030" cy="330" r="7" fill="#fff" stroke="#333" stroke-width="2"/>
+<circle cx="1200" cy="330" r="7" fill="#fff" stroke="#333" stroke-width="2"/>
+<text x="1042" y="334" font-size="12.5" text-anchor="start" fill="#1b1b1b" font-weight="bold">B6</text>
+<text x="1188" y="334" font-size="12.5" text-anchor="end" fill="#1b1b1b" font-weight="bold">A6</text>
+<text x="1042" y="384" font-size="12" text-anchor="start" fill="#c62828" font-weight="normal">VCCB: 5 V</text>
+<text x="1188" y="384" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="normal">VCCA: 3.3 V</text>
+<text x="1042" y="414" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">GND: GND</text>
+<text x="1188" y="414" font-size="12" text-anchor="end" fill="#a35f00" font-weight="normal">OE: 3.3 V [A3]</text>
+<text x="1042" y="444" font-size="11" text-anchor="start" fill="#a35f00" font-weight="normal">channels 5, 6: [A3]</text>
+<rect x="1290" y="130" width="180" height="340" rx="8" fill="#f6f6f6" stroke="#444" stroke-width="2"/>
+<rect x="1290" y="130" width="180" height="28" rx="8" fill="#2e7d32"/>
+<text x="1302" y="149" font-size="13" text-anchor="start" fill="#fff" font-weight="bold">Raspberry Pi Pico</text>
+<circle cx="1290" cy="210" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="1302" y="214" font-size="11.5" text-anchor="start" fill="#1b1b1b" font-weight="normal">GP14  pin 19  TX data</text>
+<circle cx="1290" cy="250" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
+<text x="1302" y="254" font-size="11.5" text-anchor="start" fill="#1b1b1b" font-weight="normal">GP15  pin 20  TX clock</text>
+<circle cx="1290" cy="290" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="1302" y="294" font-size="11.5" text-anchor="start" fill="#1b1b1b" font-weight="normal">GP16  pin 21  RX data</text>
+<circle cx="1290" cy="330" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
+<text x="1302" y="334" font-size="11.5" text-anchor="start" fill="#1b1b1b" font-weight="normal">GP17  pin 22  RX clock</text>
+<circle cx="1290" cy="384" r="7" fill="#fff" stroke="#888" stroke-width="2"/>
+<text x="1302" y="388" font-size="11.5" text-anchor="start" fill="#1b1b1b" font-weight="normal">3V3  pin 36: 3.3 V</text>
+<circle cx="1290" cy="414" r="7" fill="#fff" stroke="#888" stroke-width="2"/>
+<text x="1302" y="418" font-size="11.5" text-anchor="start" fill="#c62828" font-weight="normal">VBUS  pin 40: 5 V</text>
+<circle cx="1290" cy="444" r="7" fill="#fff" stroke="#888" stroke-width="2"/>
+<text x="1302" y="448" font-size="11.5" text-anchor="start" fill="#000" font-weight="normal">GND  pin 38: GND</text>
+<path d="M1023 210 C910.0 210 910.0 190 797 190" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>
+<path d="M1023 250 C910.0 250 910.0 358 797 358" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>
+<path d="M797 526 C910.0 526 910.0 290 1023 290" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aR)"/>
+<path d="M797 694 C910.0 694 910.0 330 1023 330" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aR)"/>
+<path d="M1283 210 C1245.0 210 1245.0 210 1207 210" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>
+<path d="M1283 250 C1245.0 250 1245.0 250 1207 250" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>
+<path d="M1207 290 C1245.0 290 1245.0 290 1283 290" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aR)"/>
+<path d="M1207 330 C1245.0 330 1245.0 330 1283 330" fill="none" stroke="#1f5fbf" stroke-width="2.5" marker-end="url(#aR)"/>
+<text x="1015" y="512" font-size="12" text-anchor="start" fill="#555" font-weight="normal">Power: Pico VBUS (5 V) to the level shifter VCCB and to VCC of all</text>
+<text x="1015" y="530" font-size="12" text-anchor="start" fill="#555" font-weight="normal">four modules. Pico 3V3 to VCCA and OE. One common ground:</text>
+<text x="1015" y="548" font-size="12" text-anchor="start" fill="#555" font-weight="normal">DB-25 pin 6, all modules, level shifter, Pico. [A3]</text>
+<text x="30" y="880" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">Legend:</text>
+<line x1="100" y1="876" x2="140" y2="876" stroke="#1b8a3a" stroke-width="3" stroke-linecap="round"/>
+<text x="146" y="880" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">TX: Pico to ND</text>
+<line x1="250" y1="876" x2="290" y2="876" stroke="#1f5fbf" stroke-width="3" stroke-linecap="round"/>
+<text x="296" y="880" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">RX: ND to Pico</text>
+<line x1="400" y1="876" x2="440" y2="876" stroke="#e07b00" stroke-width="5" stroke-linecap="round"/>
+<text x="446" y="880" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">strap</text>
+<text x="560" y="880" font-size="12" text-anchor="start" fill="#a35f00" font-weight="normal">[A#] = assumption, see below</text>
+<text x="30" y="915" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">EVIDENCE</text>
+<text x="30" y="935" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- ND tables (service handbook Vol II): section 2-20 page 7 of 8 (HDLC card) and section 2-22 page 5 of 5 (MEGALINK card): pin names, pairs, plus/minus signs, cable pairs.</text>
+<text x="30" y="953" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- The manual&#x27;s computer-link cable swaps the clock pair (printed 11 to 8, 24 to 21); data and busy go plus to plus. Board B hears the clock on the same pin pairing as the old receiver (A on pin 24).</text>
+<text x="30" y="971" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- Firmware (src/sync.cpp, src/sdlc.pio): TX data GP14, TX clock GP15, RX data GP16, RX clock GP17. Data is read on the rising edge of the clock pin.</text>
+<text x="30" y="989" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- Old breadboard, as you reported it: drivers on pins 23/10 and 21/8, receivers on 25/12 and 24/11, (plus the four plug straps, shown on Board A).</text>
+<text x="30" y="1015" font-size="13" text-anchor="start" fill="#a35f00" font-weight="bold">ASSUMED - check before building</text>
+<text x="30" y="1035" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A1] Pin numbers are as printed on your board. Your AliExpress cable is flipped, so these are NOT the ND&#x27;s pin numbers. Use HDLC-PCB-ESP32-Wiring.svg for the PCB. Ground on 6 follows from the flip and is not tested.</text>
+<text x="30" y="1053" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A2] On a MAX485 module, A is the plus (non-inverting) wire and B the minus. Check the labels on your modules and the MAX485 datasheet.</text>
+<text x="30" y="1071" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A3] Level shifter channels 5 and 6 for the receive side, OE tied to 3.3 V, and the 5 V supply taken from the Pico VBUS. The old cables on GP16 and GP17 go nowhere.</text>
+<text x="30" y="1089" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A4] Receive clock: A on pin 24, B on pin 11, copied from the old receiver wiring. It is not proven that a real ND needs this.</text>
+<text x="30" y="1107" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">[A5] The jumpers are what the 3015 card&#x27;s cable plug has. 9 and 22 are also the MEGALINK&#x27;s busy-input pins, so this board suits the 3015 only; for a MEGALINK, take the jumpers on 9 and 22 off. Not verified that the ND needs the jumpers.</text>
+<text x="30" y="1125" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">Not drawn: the 120 ohm termination jumper on each module, surge protection.</text>
+<text x="30" y="1160" font-size="13" text-anchor="start" fill="#a35f00" font-weight="bold">JUMPER WIRES - why they are there (names from the ND manual, valid only if [A1] is right)</text>
+<text x="30" y="1180" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- Fact: the manual&#x27;s cable for the 3015 (325402) has these jumpers inside each plug. This board plugs straight into the ND with no cable, so on this PCB the jumpers stand in for that plug.</text>
+<text x="30" y="1198" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- Jumpers 9-11 and 22-24: they join the ND&#x27;s clock output (11, 24) to an input pair on the ND (9, 22). The 3015 manual calls that input &#x27;indication&#x27;. So the ND hears its own clock on it.</text>
+<text x="30" y="1216" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- Why the cable does that: the pages I read do not say. GUESS, not verified: in computer-link mode the card wants a signal on that input, and the cable supplies one from its own clock.</text>
+<text x="30" y="1234" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- Jumpers 3-15-16 and 17-4: the manual lists them as jumper points only. What they do is not documented on the pages read. NOT KNOWN.</text>
+<text x="30" y="1252" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- Only a test settles it: build without the jumpers and see if the link comes up. If it does not, add them one strap at a time.</text>
+<text x="30" y="1268" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- Still no link: swap plus and minus on ONE pair at a time (data or clock), one change per try, and watch what the ND does. Swapping a pair should be safe for the chips (general knowledge, not checked). Clock polarity is already uncertain [A4].</text>
+<text x="30" y="1288" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">- Evidence: manual section 2-20 page 7 of 8 (jumpers 3-5, 15-17, 11-24-23, 22-10 in the manual&#x27;s own numbers) and your beep test, which found exactly these four groups.</text>
+</svg>

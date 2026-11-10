@@ -4,3 +4,5 @@ src/HDLCGW/docs/
 kicad/**/*-backups/
 # Hand-made archives of the sketch
 Backup-*.zip
+# KiCad per-user view settings
+*.kicad_prl

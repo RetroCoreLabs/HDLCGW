@@ -297,6 +297,8 @@ static void slot_connect(term_slot *t, XmsgNode *node, uint32_t now)
     uint16_t ttyp = settings_ttyp();
     cfg.ttyp[0] = (uint8_t)(ttyp >> 8u);
     cfg.ttyp[1] = (uint8_t)(ttyp & 0xFFu);
+    /* Even parity on typed bytes, or none (settings_parity says why). */
+    cfg.keystroke_parity = settings_parity();
     if (t->user[0] != '\0')
     {
         cfg.user_name = t->user;   /* copied by tad_asker_init */

@@ -15,6 +15,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -100,6 +101,12 @@ typedef struct
     uint32_t connected_ms;
 } user_state;
 
+/* Longest escape sequence held back to send in one piece (a TDV function key
+ * is 5 bytes, ESC [ 4 6 _). Longer ones are sent as they are. */
+#define TELNET_SEQ_MAX 16
+/* A sequence still not finished this long after its ESC is sent as it is. */
+#define TELNET_SEQ_WAIT_MS 200u
+
 /** @brief One telnet user; user i always uses terminal session slot i. */
 typedef struct
 {
@@ -110,6 +117,9 @@ typedef struct
     uint8_t tn_verb;
     bool last_was_cr;
     TermEscape esc;           /* lone ESC (the escape key) or a function key (libxmsg) */
+    uint8_t seq[TELNET_SEQ_MAX]; /* a function key's escape sequence, held until whole */
+    int seq_len;              /* 0: no sequence held */
+    uint32_t seq_at_ms;       /* when its ESC came */
     user_state *s;            /* in PSRAM */
     bool tad;                 /* came in from SINTRAN (tad_in.h), not over TCP */
     bool tad_echo;            /* the echo state last asked of the caller's machine */
@@ -358,6 +368,7 @@ static void user_start(telnet_user *u)
     u->session_seen_open = false;
     /* libxmsg's default 50 ms, as its own telnet bridge uses (host_tad_telnet.c). */
     term_escape_init(&u->esc, TERM_ESCAPE_DEFAULT_MS);
+    u->seq_len = 0;
     u->client.setNoDelay(true);
     user_write(u, NEGOTIATE, sizeof NEGOTIATE);
 
@@ -395,6 +406,7 @@ static void tad_user_start(telnet_user *u)
     u->last_was_cr = false;
     u->session_seen_open = false;
     term_escape_init(&u->esc, TERM_ESCAPE_DEFAULT_MS);
+    u->seq_len = 0;
 
     memset(s, 0, sizeof *s);
     s->connected_ms = millis();
@@ -430,7 +442,9 @@ static void cmd_help(telnet_user *u)
         user_say(u, "USERS              the users (admin)\r\n"
                     "ADDUSER name <admin>  add a user (admin)\r\n"
                     "DELUSER name       delete a user (admin)\r\n"
-                    "RESETPW name       set a new password, changed at login (admin)\r\n");
+                    "RESETPW name       set a new password, changed at login (admin)\r\n"
+                    "NODE <n>           show or store our node number, used after RESTART (admin)\r\n"
+                    "RESTART            restart the gateway; every session ends (admin)\r\n");
     }
     user_say(u, "In a session: ESC alone breaks the running program; log out of SINTRAN to\r\n"
                 "come back here.\r\n");
@@ -526,6 +540,7 @@ static void cmd_connect(telnet_user *u, const char *system)
     u->session_seen_open = false;
     u->last_was_cr = false;
     term_escape_init(&u->esc, TERM_ESCAPE_DEFAULT_MS);
+    u->seq_len = 0;
     user_printf(u, "connecting to %s...\r\n", system);
     console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): connect %s", i, u->s->user,
                     system);
@@ -706,10 +721,101 @@ static bool admin_only(telnet_user *u)
     return false;
 }
 
+/**
+ * @brief Whether the command word of a line is `word` (case ignored).
+ * @param[out] args  Set to the text after the word, spaces skipped.
+ */
+static bool word_is(const char *text, const char *word, const char **args)
+{
+    size_t n = strlen(word);
+    while (*text == ' ')
+    {
+        text++;
+    }
+    if (strncasecmp(text, word, n) != 0 || (text[n] != '\0' && text[n] != ' '))
+    {
+        return false;
+    }
+    text += n;
+    while (*text == ' ')
+    {
+        text++;
+    }
+    *args = text;
+    return true;
+}
+
+/** @brief NODE [n] (admin): the USB console's NODE, on the command line. */
+static void cmd_node(telnet_user *u, const char *args)
+{
+    node_status st;
+    if (*args == '\0')
+    {
+        node_task_get_status(&st);
+        user_printf(u, "stored node number %u, running as %u\r\n", (unsigned)settings_node(),
+                    (unsigned)st.own_node);
+        return;
+    }
+    char *end = NULL;
+    unsigned long value = strtoul(args, &end, 10);
+    while (*end == ' ')
+    {
+        end++;
+    }
+    if (end == args || *end != '\0' || value == 0 || value > 65535u)
+    {
+        user_say(u, "NODE takes a number from 1 to 65535\r\n");
+        return;
+    }
+    if (settings_set_node((uint16_t)value) != 0)
+    {
+        user_say(u, "could not store the node number\r\n");
+        return;
+    }
+    console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): node number %lu stored",
+                    user_index(u), u->s->user, value);
+    user_printf(u, "node number %lu stored; RESTART to use it\r\n", value);
+}
+
+/** @brief RESTART (admin): restart the gateway, as the USB console's RESET does. */
+static void cmd_restart(telnet_user *u)
+{
+    console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): restart", user_index(u),
+                    u->s->user);
+    user_say(u, "restarting; every session ends\r\n");
+    if (!u->tad)
+    {
+        u->client.flush();
+    }
+    console_out_flush();
+    delay(300);   /* let the text reach the user before everything stops */
+    ESP.restart();
+}
+
 /** @brief One line typed at the prompt. */
 /* size exemption: command table */
 static void prompt_line(telnet_user *u, const char *text)
 {
+    const char *rest = NULL;
+    /* XMSGGW's own commands, not in libxmsg's list (term_line.h). */
+    if (word_is(text, "NODE", &rest))
+    {
+        if (admin_only(u))
+        {
+            cmd_node(u, rest);
+        }
+        show_prompt(u);
+        return;
+    }
+    if (word_is(text, "RESTART", &rest))
+    {
+        if (admin_only(u))
+        {
+            cmd_restart(u);
+        }
+        show_prompt(u);
+        return;
+    }
     char arg[AUTH_NAME_MAX + 1u];
     TermCmd cmd = term_cmd_parse(text, arg, sizeof arg);
     if (strlen(arg) > AUTH_NAME_MAX)
@@ -975,6 +1081,54 @@ static bool user_telnet(telnet_user *u, uint8_t c)
     }
 }
 
+/** @brief Send a held escape sequence to the host, all in one go, not echoed. */
+static void seq_flush(telnet_user *u)
+{
+    if (u->seq_len > 0)
+    {
+        (void)term_type(user_index(u), u->seq, u->seq_len);
+        u->seq_len = 0;
+    }
+}
+
+/**
+ * @brief Add one byte to a held escape sequence (ECMA-48 shape: ESC, then for
+ *        CSI "[" parameter bytes 0x30-0x3F and intermediates 0x20-0x2F up to a
+ *        final byte 0x40-0x7E; otherwise intermediates 0x20-0x2F up to a
+ *        final 0x30-0x7E).
+ * @return true when the byte was taken (the sequence is sent once whole);
+ *         false when it cannot be part of one: the held bytes are sent first
+ *         and the caller handles the byte itself.
+ */
+static bool seq_byte(telnet_user *u, uint8_t b)
+{
+    bool done;
+
+    if (b < 0x20u || b > 0x7Eu)
+    {
+        seq_flush(u);
+        return false;
+    }
+    if (u->seq_len == 1)
+    {
+        done = (b >= 0x30u && b != '[');
+    }
+    else if (u->seq[1] == '[')
+    {
+        done = (b >= 0x40u);
+    }
+    else
+    {
+        done = (b >= 0x30u);
+    }
+    u->seq[u->seq_len++] = b;
+    if (done || u->seq_len >= TELNET_SEQ_MAX)
+    {
+        seq_flush(u);
+    }
+    return true;
+}
+
 /**
  * @brief One byte typed in a session: CR LF and CR NUL made into CR, data to
  *        the host (echoed if the host asks).
@@ -1011,6 +1165,20 @@ static void session_byte(telnet_user *u, uint8_t c)
      * an ESC with nothing after it within 50 ms is the escape key and goes to
      * the host as an ESCA, not as a typed byte; an ESC followed at once by
      * more bytes is a function key and goes through as text, unchanged. */
+    /* A function key (an escape sequence) is held until whole, then queued
+     * at once and never echoed locally: a terminal does not echo its own
+     * keys. How many of its bytes go in each TAD data letter is the host's
+     * choice, not ours: libxmsg's asker (e961a02) cuts the input at the
+     * host's break characters and waits for the next input grant. In
+     * S3-CONFIG the host breaks on every character, and SINTRAN's own asker
+     * on D102 sent SLUTT one byte per letter, S3-CONFIG then exiting (hub
+     * capture, 2026-11-10 11:55:32). Sending all five in one letter, as an
+     * earlier build here did, got BEL. */
+    if (u->seq_len > 0 && seq_byte(u, c))
+    {
+        return;
+    }
+
     uint8_t out[2];
     bool escape = false;
     int n = term_escape_byte(&u->esc, c, millis(), out, &escape);
@@ -1022,6 +1190,19 @@ static void session_byte(telnet_user *u, uint8_t c)
     for (int k = 0; k < n; k++)
     {
         uint8_t b = out[k];
+        if (u->seq_len > 0 && seq_byte(u, b))
+        {
+            continue;   /* the byte after the ESC that started a sequence */
+        }
+        if (b == TERM_ESC && k + 1 < n)
+        {
+            /* term_escape_byte gave the held ESC back with the byte after
+             * it: a function key starts here. */
+            u->seq[0] = b;
+            u->seq_len = 1;
+            u->seq_at_ms = millis();
+            continue;
+        }
         (void)term_type(i, &b, 1);
         /* No local echo for a password, a function key's ESC, or the Enter
          * key: the host sends its own CR LF for the CR (tad_asker.h: after
@@ -1055,6 +1236,11 @@ static void session_pass(telnet_user *u)
     if (term_escape_poll(&u->esc, millis()))
     {
         term_escape(i);
+    }
+    /* A sequence that never finished goes on as it is. */
+    if (u->seq_len > 0 && (uint32_t)(millis() - u->seq_at_ms) >= TELNET_SEQ_WAIT_MS)
+    {
+        seq_flush(u);
     }
     while ((n = term_read(i, buf, (int)sizeof buf)) > 0)
     {

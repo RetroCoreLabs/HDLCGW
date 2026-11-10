@@ -224,6 +224,30 @@ int settings_set_ttyp(uint16_t ttyp)
     return (written == sizeof ttyp) ? 0 : -1;
 }
 
+bool settings_parity(void)
+{
+    Preferences p;
+    bool on = true;
+    if (p.begin(NAMESPACE, true))
+    {
+        on = p.getBool("kpar", true);
+        p.end();
+    }
+    return on;
+}
+
+int settings_set_parity(bool on)
+{
+    Preferences p;
+    size_t written = 0;
+    if (p.begin(NAMESPACE, false))
+    {
+        written = p.putBool("kpar", on);
+        p.end();
+    }
+    return (written == 1u) ? 0 : -1;
+}
+
 int settings_set_wifi_pass(const char *pass)
 {
     return put_text("wpass", pass, SETTINGS_PASS_SIZE - 1);

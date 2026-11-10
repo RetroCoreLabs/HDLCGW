@@ -52,6 +52,7 @@ static void handle_reach(const char *args);
 static void handle_term(const char *args);
 static void handle_wifi(const char *args);
 static void handle_ttyp(const char *args);
+static void handle_parity(const char *args);
 static void handle_alias(const char *args);
 
 static const command COMMANDS[] =
@@ -66,6 +67,7 @@ static const command COMMANDS[] =
     { "WIFI",    "WIFI [STATUS]|SSID <name>|PASS <password>|CONNECT - network for telnet",
       handle_wifi },
     { "TTYP",    "TTYP [n] - Terminal type for new sessions (0 default; 93 = TDV 2200)", handle_ttyp },
+    { "PARITY",  "PARITY [ON|OFF] - Even parity on typed bytes for new sessions (ON default)", handle_parity },
     { "ALIAS",   "ALIAS [<name> <system number>|DEL <name>] - names CONNECT takes", handle_alias },
     { "BAUD",    "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored)", handle_baud },
     { "CLOCK",   "CLOCK ON|OFF - Run or stop the transmit clock",              handle_clock },
@@ -698,11 +700,6 @@ static void handle_wifi(const char *args)
 }
 
 /**
- * @brief TTYP command: show or store the terminal type sent when a session
- *        opens (settings.h). Sessions already open keep theirs.
- * @param[in] args  0..65535 decimal, or NULL to show.
- */
-/**
  * @brief ALIAS: list, add or remove the names CONNECT takes in place of a
  *        system number (settings.h says why the list is kept by hand).
  * @param[in] args  "", "<name> <number>" or "DEL <name>".
@@ -749,6 +746,11 @@ static void handle_alias(const char *args)
     console_out_printf("%s = system %lu stored.\r\n", name, no);
 }
 
+/**
+ * @brief TTYP command: show or store the terminal type sent when a session
+ *        opens (settings.h). Sessions already open keep theirs.
+ * @param[in] args  0..65535 decimal, or NULL to show.
+ */
 static void handle_ttyp(const char *args)
 {
     if (args != NULL && *args != '\0')
@@ -768,6 +770,39 @@ static void handle_ttyp(const char *args)
     }
     console_out_printf("Terminal type %u for sessions opened from now on.\r\n",
                        (unsigned)settings_ttyp());
+}
+
+/**
+ * @brief PARITY command: show, or set ON / OFF, even parity on typed bytes
+ *        for sessions opened from now on (settings_parity).
+ * @param[in] args  ON, OFF, or NULL to show.
+ */
+static void handle_parity(const char *args)
+{
+    if (args != NULL && *args != '\0')
+    {
+        bool on;
+        if (strcasecmp(args, "ON") == 0)
+        {
+            on = true;
+        }
+        else if (strcasecmp(args, "OFF") == 0)
+        {
+            on = false;
+        }
+        else
+        {
+            console_out_println("Usage: PARITY [ON|OFF]");
+            return;
+        }
+        if (settings_set_parity(on) != 0)
+        {
+            console_out_println("Could not store the parity choice.");
+            return;
+        }
+    }
+    console_out_printf("Typed bytes %s parity for sessions opened from now on.\r\n",
+                       settings_parity() ? "with even" : "without");
 }
 
 void commands_process(char *line)

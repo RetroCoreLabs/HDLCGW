@@ -11,6 +11,7 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -109,6 +110,23 @@ uint16_t settings_ttyp(void);
  * @return 0 or -1.
  */
 int settings_set_ttyp(uint16_t ttyp);
+
+/**
+ * @brief Whether typed bytes go to the host with even parity in bit 7
+ *        (libxmsg TadAskerConfig.keystroke_parity).
+ *
+ * libxmsg sets it by default because captured TAD sessions of typed text
+ * carry it. A TDV function key sent that way (SLUTT, 1B DB B4 B8 5F) was
+ * answered with BEL by S3-CONFIG, while the same key without parity on
+ * D100's own terminal port worked (Ronny, 2026-11-10 11:36 and 11:37).
+ * Whether parity is the cause is not proven; this setting is the test.
+ *
+ * @return true (the default) when parity is added.
+ */
+bool settings_parity(void);
+
+/** @brief Store the keystroke parity choice; used for sessions opened after this. @return 0 or -1. */
+int settings_set_parity(bool on);
 
 /**
  * @brief Aliases: names a user may give CONNECT in place of a system number.

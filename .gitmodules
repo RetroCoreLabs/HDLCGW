@@ -1,0 +1,3 @@
+[submodule "src/external/libxmsg"]
+	path = src/external/libxmsg
+	url = https://github.com/RetroCoreLabs/libxmsg.git

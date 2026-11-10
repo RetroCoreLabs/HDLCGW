@@ -26,6 +26,7 @@
 #include "console_out.h"
 #include "console_task.h"
 #include "node_task.h"
+#include "names.h"
 #include "settings.h"
 #include "telnet_task.h"
 #include "usb_tx_task.h"
@@ -709,14 +710,37 @@ static void handle_alias(const char *args)
     char name[SETTINGS_ALIAS_NAME_MAX + 2];
     if (args == NULL || *args == '\0')
     {
-        static char text[SETTINGS_ALIAS_MAX * 32];
-        int n = settings_alias_list(text, sizeof text);
+        /* In PSRAM, made on first use: internal RAM is full once WiFi is in. */
+        static char *text = NULL;
+        const size_t size = (size_t)(SETTINGS_ALIAS_MAX + NAMES_MAX + 4) * 32u;
+        if (text == NULL)
+        {
+            text = (char *)heap_caps_calloc(1, size, MALLOC_CAP_SPIRAM);
+            if (text == NULL)
+            {
+                console_out_println("No memory for the list.");
+                return;
+            }
+        }
+        int n = settings_alias_list(text, size);
         if (n == 0)
         {
-            console_out_println("No aliases. ALIAS <name> <system number> adds one.");
-            return;
+            console_out_println("Set by hand: none. ALIAS <name> <system number> adds one.");
         }
+        else
+        {
+            console_out_println("Set by hand:");
+            console_out_printf("%s", text);
+        }
+        (void)names_list(text, size);
+        console_out_println("From the host's name table (ALIAS READ reads it again):");
         console_out_printf("%s", text);
+        return;
+    }
+    if (strcasecmp(args, "READ") == 0)
+    {
+        names_refresh();
+        console_out_println("The host's name table is read again; ALIAS shows it.");
         return;
     }
     if (strncasecmp(args, "DEL ", 4) == 0)

@@ -13,6 +13,7 @@
 #include <esp_heap_caps.h>
 
 #include "console_out.h"
+#include "names.h"
 #include "settings.h"
 
 #define TERM_IN_SIZE  2048
@@ -147,9 +148,11 @@ int term_open(int slot, const char *system, const char *user)
     if (!digits)
     {
         uint16_t found;
-        if (settings_alias(system, &found) != 0)
+        /* A name set by hand first, then the host's own system names
+         * (names.h, read from its XROUT as LIST-NAMES does). */
+        if (settings_alias(system, &found) != 0 && names_lookup(system, &found) != 0)
         {
-            return -2;   /* not a number, and no such alias */
+            return -2;   /* not a number, and no such name */
         }
         no = found;
     }

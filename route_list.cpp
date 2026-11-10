@@ -17,6 +17,7 @@
 #include <libxmsg/xrout/xrout_walk.h>
 
 #include "console_out.h"
+#include "names.h"
 
 #define TEXT_SIZE 4096
 
@@ -168,13 +169,18 @@ static void on_done(void *ctx, int result, unsigned entries)
     s_ended = true;
 }
 
+bool route_list_busy(void)
+{
+    return s_want || s_running;
+}
+
 void route_list_pass(XmsgNode *node, uint32_t now)
 {
     if (s_walk == NULL)
     {
         return;
     }
-    if (s_want)
+    if (s_want && !names_busy())   /* a name-table walk ends first */
     {
         s_want = false;
         int32_t peer = lapb_peer_node(&node->lapb);

@@ -25,6 +25,13 @@
 int route_list_init(void);
 
 /**
+ * @brief Whether a LIST is asked for or running. The name-table walk
+ *        (names.h) waits for it: one walk to the host at a time, since a
+ *        reply is matched to its question by being the only one out.
+ */
+bool route_list_busy(void);
+
+/**
  * @brief Ask for a LIST for one user.
  * @param[in] owner  The asker's slot number; route_list_read only answers it.
  * @return 0 when queued, -1 when another LIST is running.

@@ -19,6 +19,7 @@
 
 #include "console_out.h"
 #include "route_list.h"
+#include "names.h"
 #include "settings.h"
 #include "tad_in.h"
 #include "term.h"
@@ -227,6 +228,10 @@ void node_task_init(void)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for LIST");
     }
+    if (names_init() != 0)
+    {
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the host's name table");
+    }
     if (tad_in_init() != 0)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for incoming terminal sessions");
@@ -399,6 +404,7 @@ void node_task_run(void *params)
             }
             term_pass(s_np, now);
             route_list_pass(s_np, now);
+            names_pass(s_np, now);
             tad_in_pass(s_np, now);
             (void)xmsg_node_tick(s_np, now);
         }

@@ -52,6 +52,7 @@ static void handle_reach(const char *args);
 static void handle_term(const char *args);
 static void handle_wifi(const char *args);
 static void handle_ttyp(const char *args);
+static void handle_alias(const char *args);
 
 static const command COMMANDS[] =
 {
@@ -65,6 +66,7 @@ static const command COMMANDS[] =
     { "WIFI",    "WIFI [STATUS]|SSID <name>|PASS <password>|CONNECT - network for telnet",
       handle_wifi },
     { "TTYP",    "TTYP [n] - Terminal type for new sessions (0 default; 93 = TDV 2200)", handle_ttyp },
+    { "ALIAS",   "ALIAS [<name> <system number>|DEL <name>] - names CONNECT takes", handle_alias },
     { "BAUD",    "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored)", handle_baud },
     { "CLOCK",   "CLOCK ON|OFF - Run or stop the transmit clock",              handle_clock },
     { "INSPECT", "INSPECT [BAD [0..3]] - Last frame, or n-th newest bad one",  handle_inspect },
@@ -555,9 +557,14 @@ static void handle_term(const char *args)
         }
         if (*sys == '\0')
         {
-            console_out_println("Usage: TERM CONNECT <system>, for example TERM CONNECT D100");
+            console_out_println("Usage: TERM CONNECT <system number or alias>, e.g. TERM CONNECT 100");
         }
-        else if (term_open(TERM_CONSOLE_SLOT, sys, NULL) != 0)
+        else if (int rc = term_open(TERM_CONSOLE_SLOT, sys, NULL); rc == -2)
+        {
+            console_out_printf("%s is not a system number, and not an alias (ALIAS lists them).\r\n",
+                               sys);
+        }
+        else if (rc != 0)
         {
             console_out_println("Not started: a session is open, or the name is too long.");
         }
@@ -695,6 +702,53 @@ static void handle_wifi(const char *args)
  *        opens (settings.h). Sessions already open keep theirs.
  * @param[in] args  0..65535 decimal, or NULL to show.
  */
+/**
+ * @brief ALIAS: list, add or remove the names CONNECT takes in place of a
+ *        system number (settings.h says why the list is kept by hand).
+ * @param[in] args  "", "<name> <number>" or "DEL <name>".
+ */
+static void handle_alias(const char *args)
+{
+    char name[SETTINGS_ALIAS_NAME_MAX + 2];
+    if (args == NULL || *args == '\0')
+    {
+        static char text[SETTINGS_ALIAS_MAX * 32];
+        int n = settings_alias_list(text, sizeof text);
+        if (n == 0)
+        {
+            console_out_println("No aliases. ALIAS <name> <system number> adds one.");
+            return;
+        }
+        console_out_printf("%s", text);
+        return;
+    }
+    if (strncasecmp(args, "DEL ", 4) == 0)
+    {
+        const char *del = args + 4;
+        console_out_printf("%s\r\n", (settings_alias_delete(del) == 0) ? "Deleted."
+                                                                         : "No such alias.");
+        return;
+    }
+    const char *space = strchr(args, ' ');
+    size_t len = (space == NULL) ? 0u : (size_t)(space - args);
+    char *end = NULL;
+    unsigned long no = (space == NULL) ? 0ul : strtoul(space + 1, &end, 10);
+    if (len == 0 || len > SETTINGS_ALIAS_NAME_MAX || end == space + 1 || no == 0
+        || no > 65535ul)
+    {
+        console_out_println("Usage: ALIAS <name> <system number>, e.g. ALIAS D102 102");
+        return;
+    }
+    memcpy(name, args, len);
+    name[len] = '\0';
+    if (settings_alias_set(name, (uint16_t)no) != 0)
+    {
+        console_out_println("Not stored: a name of only digits, a full list, or a write error.");
+        return;
+    }
+    console_out_printf("%s = system %lu stored.\r\n", name, no);
+}
+
 static void handle_ttyp(const char *args)
 {
     if (args != NULL && *args != '\0')

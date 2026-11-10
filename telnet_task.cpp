@@ -31,7 +31,10 @@
 #include "settings.h"
 #include "term.h"
 #include "route_list.h"
+#include "tad_in.h"
 #include "users.h"
+
+#include <libxmsg/tad/tad_responder.h>
 
 #define WIFI_RETRY_MS 20000u
 #define HOSTNAME "xmsggw"
@@ -108,9 +111,69 @@ typedef struct
     bool last_was_cr;
     TermEscape esc;           /* lone ESC (the escape key) or a function key (libxmsg) */
     user_state *s;            /* in PSRAM */
+    bool tad;                 /* came in from SINTRAN (tad_in.h), not over TCP */
+    bool tad_echo;            /* the echo state last asked of the caller's machine */
 } telnet_user;
 
 static telnet_user s_users[TELNET_TASK_USERS];
+
+/* Who holds each user place. Claimed from two tasks (telnet here, an
+ * incoming SINTRAN call in the node task, tad_in.cpp), so under a spinlock. */
+typedef enum
+{
+    PLACE_FREE = 0,
+    PLACE_TELNET,
+    PLACE_TAD
+} place_owner;
+static volatile place_owner s_place[TELNET_TASK_USERS];
+static portMUX_TYPE s_place_mux = portMUX_INITIALIZER_UNLOCKED;
+
+/** @brief Take a free place for an owner; a place whose terminal session is still closing is not free. */
+static int claim_place(place_owner who)
+{
+    term_status ts[TELNET_TASK_USERS];
+    int got = -1;
+    for (int i = 0; i < TELNET_TASK_USERS; i++)
+    {
+        term_get_status(i, &ts[i]);
+    }
+    portENTER_CRITICAL(&s_place_mux);
+    for (int i = 0; i < TELNET_TASK_USERS && got < 0; i++)
+    {
+        if (s_place[i] == PLACE_FREE && !ts[i].open && s_users[i].s != NULL)
+        {
+            s_place[i] = who;
+            got = i;
+        }
+    }
+    portEXIT_CRITICAL(&s_place_mux);
+    return got;
+}
+
+static void free_place(int i)
+{
+    portENTER_CRITICAL(&s_place_mux);
+    s_place[i] = PLACE_FREE;
+    portEXIT_CRITICAL(&s_place_mux);
+}
+
+int telnet_task_claim_place(void)
+{
+    return claim_place(PLACE_TAD);
+}
+
+int telnet_task_places_in_use(void)
+{
+    int n = 0;
+    for (int i = 0; i < TELNET_TASK_USERS; i++)
+    {
+        if (s_place[i] != PLACE_FREE)
+        {
+            n++;
+        }
+    }
+    return n;
+}
 static telnet_task_stats s_stats;
 static AuthUser *s_list = NULL;   /* USERS_MAX records for USERS / DELUSER, in PSRAM */
 static char *s_report = NULL;     /* REPORT_SIZE for WHO, in PSRAM */
@@ -151,7 +214,32 @@ static void user_write(telnet_user *u, const uint8_t *bytes, size_t len)
     {
         return;
     }
+    if (u->tad)
+    {
+        s_stats.bytes_to_user += (uint32_t)tad_in_write(user_index(u), bytes, (int)len);
+        return;
+    }
     s_stats.bytes_to_user += (uint32_t)u->client.write(bytes, len);
+}
+
+/**
+ * @brief Whether the user sees what they type. Telnet: the line editor
+ *        echoes. From SINTRAN: the caller's own machine echoes, so the line
+ *        editor must not, and it is told when to stop (a password).
+ */
+static void set_echo(telnet_user *u, bool on)
+{
+    if (u->tad)
+    {
+        u->s->line.echo = false;
+        if (on != u->tad_echo)
+        {
+            u->tad_echo = on;
+            tad_in_echo(user_index(u), on);
+        }
+        return;
+    }
+    u->s->line.echo = on;
 }
 
 /** @brief Write text to a user. */
@@ -185,12 +273,22 @@ static void user_drop(telnet_user *u, const char *why)
     {
         term_hangup(i);
     }
-    if (u->on)
+    if (u->on && !u->tad)
     {
         u->client.stop();
     }
     u->on = false;
     s_stats.users_on--;
+    if (u->tad)
+    {
+        /* The place stays taken until the SINTRAN side has closed too
+         * (telnet_task_run frees it then). */
+        tad_in_release(i);
+    }
+    else
+    {
+        free_place(i);
+    }
     /* The login dialogue and the line may hold password hashes or typing. */
     if (u->s->listing)
     {
@@ -211,12 +309,12 @@ static void show_prompt(telnet_user *u)
         p = auth_login_prompt(&s->login);
         if (p != NULL)
         {
-            s->line.echo = auth_login_echo(&s->login);
+            set_echo(u, auth_login_echo(&s->login));
             user_say(u, p);
         }
         break;
     case PH_PASSWD:
-        s->line.echo = false;
+        set_echo(u, false);
         p = auth_login_prompt(&s->login);
         if (p != NULL)
         {
@@ -224,11 +322,11 @@ static void show_prompt(telnet_user *u)
         }
         break;
     case PH_SETPW:
-        s->line.echo = false;
+        set_echo(u, false);
         user_printf(u, "%s for %s: ", s->setpw_again ? "again" : "new password", s->setpw.name);
         break;
     case PH_PROMPT:
-        s->line.echo = true;
+        set_echo(u, true);
         user_say(u, PROMPT);
         break;
     case PH_SESSION:
@@ -282,11 +380,45 @@ static void user_start(telnet_user *u)
     show_prompt(u);
 }
 
+/** @brief A user who came in from SINTRAN (CONNECT-TO D101): greet, ask for the name. */
+static void tad_user_start(telnet_user *u)
+{
+    user_state *s = u->s;
+    int i = user_index(u);
+
+    u->tad = true;
+    u->tad_echo = true;       /* tad_in.cpp sends ECKM 01 when the session starts */
+    u->on = true;
+    s_stats.users_on++;
+    s_stats.users++;
+    u->tn = TN_DATA;
+    u->last_was_cr = false;
+    u->session_seen_open = false;
+    term_escape_init(&u->esc, TERM_ESCAPE_DEFAULT_MS);
+
+    memset(s, 0, sizeof *s);
+    s->connected_ms = millis();
+    tad_in_describe(i, s->remote, sizeof s->remote);
+    s->ph = PH_LOGIN;
+    term_line_init(&s->line, false);
+    if (!s_users_ready
+        || auth_login_init(&s->login, users_store(), users_random(), AUTH_LOGIN_TRIES,
+                           AUTH_LOGIN_DELAY_MS) != 0)
+    {
+        user_say(u, "\r\nXMSGGW: the user list cannot be read. Try again later.\r\n");
+        s->closing = true;
+        return;
+    }
+    user_printf(u, "\r\nXMSGGW %s, node %u\r\n", XMSGGW_VERSION, (unsigned)settings_node());
+    console_out_log(CONTROL_FRAME_LOG_INFO, "User %d on from SINTRAN, %s", i, s->remote);
+    show_prompt(u);
+}
+
 /* ------------------------------------------------------------ commands */
 
 static void cmd_help(telnet_user *u)
 {
-    user_say(u, "CONNECT <system>   connect to a SINTRAN system, e.g. CONNECT D100\r\n"
+    user_say(u, "CONNECT <system>   connect to a system: its number or an alias, e.g. CONNECT 102\r\n"
                 "LIST               the systems that can be reached\r\n"
                 "WHO                the users on this gateway\r\n"
                 "INFO               the gateway and its link to the host\r\n"
@@ -375,7 +507,14 @@ static void cmd_connect(telnet_user *u, const char *system)
         show_prompt(u);
         return;
     }
-    if (term_open(i, system, u->s->user) != 0)
+    int rc = term_open(i, system, u->s->user);
+    if (rc == -2)
+    {
+        user_printf(u, "%s is not a system number, and not a known alias\r\n", system);
+        show_prompt(u);
+        return;
+    }
+    if (rc != 0)
     {
         user_say(u, "this terminal session is still closing; try again\r\n");
         show_prompt(u);
@@ -701,6 +840,13 @@ static void login_line(telnet_user *u, const char *text, uint32_t now)
             auth_wipe(&rec, sizeof rec);
         }
         user_say(u, "Logged in. HELP lists the commands.\r\n");
+        if (u->tad)
+        {
+            /* SYCN 000A after a login, as the real host sends: by the C#
+             * notes it stops D100's one-minute "not logged in" timer
+             * (tad_responder.h; unverified). */
+            tad_in_login_state(i, TAD_SYCN_LOGGED_IN);
+        }
         to_prompt(u);
         break;
     case AUTH_LOGIN_WAIT:
@@ -849,6 +995,18 @@ static void session_byte(telnet_user *u, uint8_t c)
         c = '\r';           /* a client that sends a bare LF for Enter */
     }
 
+    if (u->tad)
+    {
+        /* From SINTRAN the escape key comes as its own message (ESCA,
+         * tad_in_take_escape), so an ESC in the text is a function key and
+         * goes on as it is. The caller's machine echoes; it is told to stop
+         * when the onward host asks for no echo (a password). */
+        term_get_status(i, &ts);
+        set_echo(u, ts.echo);
+        (void)term_type(i, &c, 1);
+        return;
+    }
+
     /* The lone-ESC rule (libxmsg term_escape.h, as host_tad_telnet.c does):
      * an ESC with nothing after it within 50 ms is the escape key and goes to
      * the host as an ESCA, not as a typed byte; an ESC followed at once by
@@ -941,9 +1099,9 @@ static void user_pass(telnet_user *u)
     int i = user_index(u);
     int n;
 
-    if (!u->client.connected())
+    if (u->tad ? (tad_in_get_state(i) == TAD_IN_ENDED) : !u->client.connected())
     {
-        user_drop(u, "client closed");
+        user_drop(u, u->tad ? "the SINTRAN side closed" : "client closed");
         return;
     }
     if (u->s->closing)
@@ -955,7 +1113,20 @@ static void user_pass(telnet_user *u)
     {
         show_prompt(u);
     }
-    n = u->client.available();
+    if (u->tad)
+    {
+        if (tad_in_take_escape(i) && u->s->ph == PH_SESSION)
+        {
+            term_escape(i);
+        }
+        if (u->s->ph == PH_SESSION)
+        {
+            /* Follow the onward host's echo wish even while nothing is typed. */
+            term_get_status(i, &ts);
+            set_echo(u, ts.echo);
+        }
+    }
+    n = u->tad ? 1 : u->client.available();
     if (n > (int)sizeof buf)
     {
         n = (int)sizeof buf;
@@ -971,10 +1142,10 @@ static void user_pass(telnet_user *u)
     }
     if (n > 0)
     {
-        n = u->client.read(buf, (size_t)n);
+        n = u->tad ? tad_in_read(i, buf, (int)sizeof buf) : u->client.read(buf, (size_t)n);
         for (int k = 0; k < n; k++)
         {
-            if (user_telnet(u, buf[k]))
+            if (!u->tad && user_telnet(u, buf[k]))
             {
                 continue;
             }
@@ -1010,17 +1181,13 @@ static void user_pass(telnet_user *u)
 /** @brief A new connection: give it a free user, or turn it away. */
 static void accept_user(WiFiClient &incoming)
 {
-    for (int i = 0; i < TELNET_TASK_USERS; i++)
+    int i = claim_place(PLACE_TELNET);
+    if (i >= 0)
     {
-        term_status ts;
-        term_get_status(i, &ts);
-        /* A slot whose session has not finished closing is not free yet. */
-        if (!s_users[i].on && !ts.open && s_users[i].s != NULL)
-        {
-            s_users[i].client = incoming;
-            user_start(&s_users[i]);
-            return;
-        }
+        s_users[i].tad = false;
+        s_users[i].client = incoming;
+        user_start(&s_users[i]);
+        return;
     }
     incoming.print("\r\nXMSGGW: all terminal sessions are in use. Try again later.\r\n");
     incoming.stop();
@@ -1114,6 +1281,25 @@ void telnet_task_run(void *params)
             if (s_users[i].on)
             {
                 user_pass(&s_users[i]);
+            }
+            else if (s_place[i] == PLACE_TAD)
+            {
+                /* A SINTRAN caller: start the user once its session runs; free
+                 * the place once the session has ended (before or after). */
+                tad_in_state st = tad_in_get_state(i);
+                if (st == TAD_IN_RUNNING && !s_users[i].tad)
+                {
+                    tad_user_start(&s_users[i]);
+                }
+                else if (st == TAD_IN_ENDED || st == TAD_IN_NONE)
+                {
+                    tad_in_release(i);
+                    if (tad_in_get_state(i) == TAD_IN_NONE)
+                    {
+                        s_users[i].tad = false;
+                        free_place(i);
+                    }
+                }
             }
         }
         vTaskDelay(pdMS_TO_TICKS(5));

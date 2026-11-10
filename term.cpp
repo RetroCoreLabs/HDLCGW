@@ -25,6 +25,7 @@ typedef struct
     bool open;                        /* initialised and attached, until CLOSED/FAILED */
     bool used;                        /* tad has been initialised at least once */
     char system[16];
+    uint16_t system_no;               /* its XMSG system number: where the letter goes */
     char user[TAD_IAM_USER_SIZE];     /* "" = libxmsg's default name */
     volatile bool want_connect;
     volatile bool want_hangup;
@@ -122,6 +123,41 @@ int term_open(int slot, const char *system, const char *user)
     {
         return -1;
     }
+    /* The letter goes to the system the user gave: a system number, or an
+     * alias from XMSGGW's own list (settings_alias). A name such as "D100"
+     * is only an alias someone set up on SINTRAN, so no number is read out
+     * of it (Ronny, 2026-11-10). A real asker puts the target's number in
+     * the header and the name as typed in parameter 2 (libxmsg 5ab615f,
+     * from captures). */
+    uint32_t no = 0;
+    bool digits = true;
+    for (size_t k = 0; k < n; k++)
+    {
+        if (system[k] < '0' || system[k] > '9')
+        {
+            digits = false;
+            break;
+        }
+        no = (no * 10u) + (uint32_t)(system[k] - '0');
+        if (no > 65535u)
+        {
+            return -2;
+        }
+    }
+    if (!digits)
+    {
+        uint16_t found;
+        if (settings_alias(system, &found) != 0)
+        {
+            return -2;   /* not a number, and no such alias */
+        }
+        no = found;
+    }
+    if (no == 0)
+    {
+        return -2;
+    }
+    t->system_no = (uint16_t)no;
     memcpy(t->system, system, n + 1);
     t->user[0] = '\0';
     if (user != NULL && user[0] != '\0')
@@ -247,7 +283,13 @@ static void slot_connect(term_slot *t, XmsgNode *node, uint32_t now)
         console_out_log(CONTROL_FRAME_LOG_WARN, "Terminal session %d: peer not known", slot);
         return;
     }
-    tad_asker_config_default(&cfg, (uint16_t)peer, t->system);
+    /* The connect letter goes to the system the user gave, not to the host
+     * we are linked to (Ronny, 2026-11-10); the host passes it on. With
+     * the link peer here every CONNECT landed on D100. libxmsg 5ab615f: the
+     * asker addresses everything to cfg.peer_node and the node routes by
+     * the frame's own numbers. */
+    (void)peer;
+    tad_asker_config_default(&cfg, t->system_no, t->system);
     /* What TADA on the host shows for this session: terminal = slot + 1. */
     cfg.terminal_number = (uint16_t)(slot + 1);
     /* Terminal type, high byte first (tad_asker.h; settings.h says why it

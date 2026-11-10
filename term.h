@@ -56,14 +56,17 @@ int term_init(void);
  * @brief Ask for a session in one slot. The node task sends the connect
  *        letter on its next pass once the link is ready.
  * @param[in] slot    0..TERM_SLOTS-1.
- * @param[in] system  System name as XROUT knows it, e.g. "D100"; at most 15
- *                    characters.
+ * @param[in] system  A system number ("102") or an alias from XMSGGW's own
+ *                    list ("D102"); at most 15 characters. Sent as typed in
+ *                    the letter's name field.
  * @param[in] user    The user name SINTRAN shows for this session (TADADM),
  *                    or NULL for libxmsg's "REMOTE". Sent as "<user>@xmsggw"
  *                    when that fits the 16 characters TAD allows, else the
  *                    name alone, cut to 16 (Ronny, 2026-11-10; not "@d101":
  *                    D101 is shown as the system already).
- * @return 0 when queued, -1 for a bad slot or name, or a slot in use.
+ * @return 0 when queued; -1 for a bad slot, a name too long, or a slot in
+ *         use; -2 when `system` is neither a system number nor an alias in
+ *         XMSGGW's list (settings_alias).
  */
 int term_open(int slot, const char *system, const char *user);
 

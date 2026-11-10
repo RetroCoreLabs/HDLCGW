@@ -20,6 +20,7 @@
 #include "console_out.h"
 #include "route_list.h"
 #include "settings.h"
+#include "tad_in.h"
 #include "term.h"
 
 /* Longest line frame: address, control, N1 bytes of data, FCS. */
@@ -181,6 +182,13 @@ static void log_write(void *ctx, XmsgLogCategory category, XmsgLogLevel level, c
 }
 
 /** @brief libxmsg link change: say so on the console. */
+/** @brief A port-0 letter (node callback, node task). */
+static void on_letter(void *ctx, const XmsgDatagram *dg, uint32_t now_ms)
+{
+    (void)ctx;
+    tad_in_letter(s_np, dg, now_ms);
+}
+
 static void link_state(void *ctx, LapbState state, bool up, bool ready, const char *reason)
 {
     (void)ctx;
@@ -219,6 +227,10 @@ void node_task_init(void)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for LIST");
     }
+    if (tad_in_init() != 0)
+    {
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for incoming terminal sessions");
+    }
     hdlc_decoder_reset(&s_dec);
     hdlc_decoder_set_buffer(&s_dec, s_rx_frame, (int)sizeof s_rx_frame);
 
@@ -254,6 +266,9 @@ void node_task_init(void)
 
     memset(&cb, 0, sizeof cb);
     cb.link_state = link_state;
+    /* Port-0 letters: CONNECT-TO D101 and LI-SYS's status question
+     * (tad_in.h). Routing questions the node answers itself. */
+    cb.on_letter = on_letter;
 
     if (xmsg_node_init(s_np, &cfg, &ports, &cb) != XMSG_OK)
     {
@@ -384,6 +399,7 @@ void node_task_run(void *params)
             }
             term_pass(s_np, now);
             route_list_pass(s_np, now);
+            tad_in_pass(s_np, now);
             (void)xmsg_node_tick(s_np, now);
         }
         update_status();

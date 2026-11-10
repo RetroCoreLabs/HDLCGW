@@ -11,6 +11,7 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 /**
@@ -108,5 +109,38 @@ uint16_t settings_ttyp(void);
  * @return 0 or -1.
  */
 int settings_set_ttyp(uint16_t ttyp);
+
+/**
+ * @brief Aliases: names a user may give CONNECT in place of a system number.
+ *
+ * A name such as "D100" is only an alias someone set up on SINTRAN; nothing
+ * about the name gives the number (Ronny, 2026-11-10), so XMSGGW keeps its
+ * own list, set by hand (USB console ALIAS). How SINTRAN's CONNECT-TO gets
+ * the synonyms it shows in LIST-SYSTEM is not known yet. Kept in one NVS
+ * string, "name=number" lines, key "alias".
+ */
+#define SETTINGS_ALIAS_NAME_MAX 15
+#define SETTINGS_ALIAS_MAX 32
+
+/**
+ * @brief Look an alias up (case ignored).
+ * @return 0 and *system filled, or -1 when not in the list.
+ */
+int settings_alias(const char *name, uint16_t *system);
+
+/**
+ * @brief Add an alias, or change its number.
+ * @return 0; -1 for a bad name (empty, too long, or only digits), a full list or a failed write.
+ */
+int settings_alias_set(const char *name, uint16_t system);
+
+/** @brief Remove an alias. @return 0, or -1 when not in the list or the write failed. */
+int settings_alias_delete(const char *name);
+
+/**
+ * @brief The list as text, one "name  number" line each, CR LF ended.
+ * @return The count.
+ */
+int settings_alias_list(char *out, size_t size);
 
 #endif /* SETTINGS_H */

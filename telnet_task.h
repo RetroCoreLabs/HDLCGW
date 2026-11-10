@@ -57,6 +57,16 @@ void telnet_task_run(void *params);
 void telnet_task_reconnect(void);
 
 /**
+ * @brief Take a free user place for a caller from SINTRAN (tad_in.cpp, node
+ *        task). Telnet and SINTRAN callers share the TELNET_TASK_USERS places.
+ * @return The place, or -1 when all are taken.
+ */
+int telnet_task_claim_place(void);
+
+/** @brief User places taken now (telnet and SINTRAN callers), for LI-SYS. */
+int telnet_task_places_in_use(void);
+
+/**
  * @brief Read the counters.
  * @param[out] out  Filled with a copy.
  */

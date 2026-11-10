@@ -240,7 +240,12 @@ static void nwalk_done(void *ctx, int result, unsigned rows)
     }
 }
 
-static int svc_names(void *ctx, int place)
+/** @brief NAMES [system]: `system` 0 is plain NAMES, the host we are linked to;
+ *         otherwise the number the console resolved (as CONNECT does). The question
+ *         always goes to our link neighbour; the system number tells XROUT whose name
+ *         table to read. Whether a SINTRAN XROUT answers for a system that is not the
+ *         neighbour itself is NOT verified (to be tested live with NAMES 102). */
+static int svc_names(void *ctx, int place, uint16_t system)
 {
     (void)ctx;
     if (s_nwalk == NULL || s_node == NULL || any_walk())
@@ -252,10 +257,11 @@ static int svc_names(void *ctx, int place)
     {
         return XMSG_ESTATE;
     }
+    uint16_t target = (system != 0u) ? system : (uint16_t)peer;
     XroutNamesWalkCallbacks cb = { NULL, nwalk_row, nwalk_done };
     s_nwalk_place = place;
-    int rc = xrout_names_walk_start(s_nwalk, s_node, (uint16_t)peer, (uint16_t)peer, 10000u,
-                                    &cb, s_now);
+    int rc = xrout_names_walk_start(s_nwalk, s_node, (uint16_t)peer, target, 10000u, &cb,
+                                    s_now);
     if (rc != XMSG_OK)
     {
         s_nwalk_place = -1;

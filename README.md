@@ -17,21 +17,30 @@ Runs on the board. Tested on the bench against the D100 emulator (node 100), XMS
 - 8 telnet users at once, a 9th turned away; two SINTRAN logins at the same time;
 - a client that drops its TCP connection ends its SINTRAN session at once.
 
-Last build: flash 74%, static RAM 29%. The node and the session buffers live in PSRAM (2 MB);
-internal RAM is short (about 28 KB free at the start).
+On 2026-11-10, after the move to libxmsg's shared console, checked live: login, `HELP`, `LIST`,
+`NAMES`, `INFO`, `WHO`, `CONNECT D100` (the TDV SLUTT and HJELP keys work in S3-CONFIG),
+`CONNECT-TO D101` from D100's own terminal (the same login and prompt), `USERS`, `ADDUSER`,
+`DELUSER`.
+
+Last build: flash 77%, static RAM 30%. The node and the session buffers live in PSRAM (2 MB);
+internal RAM is short.
+
+Line speed: the line runs at whatever `BAUD` stored, and at 38400 when nothing is stored. The bench
+runs at 307200 (both boards set with `BAUD 307200`, 2026-11-10). Long output from SINTRAN is not
+limited by the line: the same `HELP` listing took 5.8 s through XMSGGW and 7.0 s between D100 and
+D102 with no gateway in the path. SINTRAN sends two 255-byte frames and then waits 200-500 ms.
 
 Not yet:
 
-- `LIST` says "not implemented yet". It is to ask D100 for its routing table (list-routing-info)
-  and show every system D100 reaches. The libxmsg code for it is being written.
-- `li-rout` on D100 hangs at node 101's line: XMSGGW does not answer D100's routing question yet.
-  Same libxmsg work.
+- `LI-SYS D101` typed at D100's own prompt shows D101 with 0 TADs in use and 10 free, whatever is
+  in use. D100 asks with integer parameter 4 = 0; libxmsg treats that as a call and sends its fixed
+  accept (0 and 10). Reported to the libxmsg session.
+- `li-rout` on D100 hung at node 101's line in an earlier build; not checked again since `LIST`
+  was built.
 - an unknown user name takes about 23 s to be refused: libxmsg spends a dummy password check at its
   own 100,000 rounds, and the time also tells whether a name exists. To be fixed in libxmsg.
 - once, after a flash, the link stayed "connected" in LAPB but "down" in the node until
   `LINK STOP` and `LINK START`. Cause not found.
-- the TDV HELP and EXIT keys: not proven to work. `TTYP 93` (terminal type of a TDV 2200) is the
-  lead for HELP; the bytes of the EXIT key are not known.
 - a file-transfer (FTP) worker task.
 
 ## Telnet
@@ -47,10 +56,11 @@ Commands at the `XMSGGW> ` prompt:
 
 | Command | What it does |
 |---|---|
-| `CONNECT <system>` | terminal session to a SINTRAN system, e.g. `CONNECT D100` |
-| `LIST` | the systems that can be reached (not implemented yet) |
+| `CONNECT <system>` | terminal session to a SINTRAN system by name or number, e.g. `CONNECT D100` |
+| `LIST` | the routing table of the host we are linked to |
+| `NAMES` | the system names and named ports the host knows |
 | `WHO` | the users on this gateway |
-| `INFO` | version, build time, link state, last password check time |
+| `INFO` | link state, line speed, frame and datagram counts, version and build time |
 | `PASSWORD` | change your own password |
 | `HELP` | the commands |
 | `EXIT`, `LOGOUT`, `QUIT` | close the connection |
@@ -58,6 +68,12 @@ Commands at the `XMSGGW> ` prompt:
 | `ADDUSER name [admin]` | add a user; the new user must change the password at first login (admin) |
 | `DELUSER name` | delete a user; the last admin cannot be deleted (admin) |
 | `RESETPW name` | set a new password, to be changed at the next login (admin) |
+| `NODE [n]` | show or store our node number, used after `RESTART` (admin) |
+| `RESTART` | restart the gateway; every session ends (admin) |
+
+The same login and command line answer a SINTRAN user who runs `CONNECT-TO D101` (up to 4 at
+once). Login and commands are libxmsg's shared console (`console/console.h`); `gw_console.cpp`
+plugs in the gateway's services.
 
 In a session: ESC on its own breaks the running program (sent as an escape, not as a byte); an ESC
 followed at once by more bytes is a function key and goes through unchanged. Log out of SINTRAN to
@@ -80,6 +96,8 @@ cable is the administrator.
 | `TERM CONNECT <system>\|TYPE <text>\|SHOW\|STATUS\|HANGUP` | a terminal session from the console |
 | `WIFI [STATUS]\|SSID <name>\|PASS <password>\|CONNECT` | the network for telnet; the password is never shown |
 | `TTYP [n]` | terminal type for new sessions (0 default; 93 = TDV 2200) |
+| `PARITY [ON\|OFF]` | even parity on typed bytes for new sessions (ON default) |
+| `ALIAS [<name> <system number>\|DEL <name>]` | names `CONNECT` takes, besides the ones learned from the host |
 | `BAUD <value>\|MAX\|DEFAULT` | the transmit clock (stored) |
 | `CLOCK ON\|OFF` | run or stop the transmit clock |
 | `INSPECT [BAD [0..3]]` | the last frame, or the n-th newest bad one |
@@ -98,10 +116,10 @@ type (namespace `xmsggw`) and the users (namespace `xmsgusr`).
 |---|---|---|---|
 | SPI rx | 24 | 2048 | line receive (HDLCGW's measured setting) |
 | SPI tx | 8 | 2048 | line transmit |
-| Node | 4 | 8192 | libhdlc decoder, the libxmsg node and the terminal sessions; the only task that touches the node |
+| Node | 4 | 12288 | libhdlc decoder, the libxmsg node, the terminal sessions, and the login and command line (libxmsg console); the only task that touches the node |
 | Console | 2 | 4096 | USB input: control frames and the text console |
 | USB tx | 1 | 2048 | USB output ring to the host |
-| Telnet | 1 | 6144 | WiFi, telnet users, login and the command line (least free measured: 2852 bytes) |
+| Telnet | 1 | 6144 | WiFi and the telnet connections: bytes in and out through per-connection queues |
 
 ## Building
 

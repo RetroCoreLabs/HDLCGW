@@ -20,7 +20,8 @@ Runs on the board. Tested on the bench against the D100 emulator (node 100), XMS
 On 2026-11-10, after the move to libxmsg's shared console, checked live: login, `HELP`, `LIST`,
 `NAMES`, `INFO`, `WHO`, `CONNECT D100` (the TDV SLUTT and HJELP keys work in S3-CONFIG),
 `CONNECT-TO D101` from D100's own terminal (the same login and prompt), `USERS`, `ADDUSER`,
-`DELUSER`.
+`DELUSER`, and `LI-SYS D101` at D100's prompt (the real count: 1 in use, 7 free with one telnet
+user, from libxmsg ef0e53a on).
 
 Last build: flash 77%, static RAM 30%. The node and the session buffers live in PSRAM (2 MB);
 internal RAM is short.
@@ -32,9 +33,6 @@ D102 with no gateway in the path. SINTRAN sends two 255-byte frames and then wai
 
 Not yet:
 
-- `LI-SYS D101` typed at D100's own prompt shows D101 with 0 TADs in use and 10 free, whatever is
-  in use. D100 asks with integer parameter 4 = 0; libxmsg treats that as a call and sends its fixed
-  accept (0 and 10). Reported to the libxmsg session.
 - `li-rout` on D100 hung at node 101's line in an earlier build; not checked again since `LIST`
   was built.
 - an unknown user name takes about 23 s to be refused: libxmsg spends a dummy password check at its

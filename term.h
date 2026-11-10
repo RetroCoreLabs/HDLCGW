@@ -71,6 +71,28 @@ int term_init(void);
 int term_open(int slot, const char *system, const char *user);
 
 /**
+ * @brief Ask for a session in one slot, to a system whose number is known
+ *        already (the console resolves names itself, gw_console.cpp).
+ * @param[in] slot      0..TERM_SLOTS-1.
+ * @param[in] system    The name as the user typed it; sent in the letter.
+ * @param[in] number    The target system's number: where the letter goes.
+ * @param[in] tad_user  The user name SINTRAN shows (TADADM), used as it is
+ *                      (cut to 16), or NULL for libxmsg's "REMOTE".
+ * @return 0 when queued; -1 for a bad slot or name, number 0, or a slot in use.
+ */
+int term_open_to(int slot, const char *system, uint16_t number, const char *tad_user);
+
+/**
+ * @brief Queue typed text only when nothing typed earlier is still waiting,
+ *        so each call's bytes go to the asker alone (the console's rule: one
+ *        call is at most one data letter; the asker cuts it further at the
+ *        host's break characters).
+ * @return Bytes taken: all of them (up to the buffer), or 0 when earlier
+ *         text still waits or there is no session.
+ */
+int term_type_one(int slot, const uint8_t *text, int len);
+
+/**
  * @brief Queue typed text. CR is not added.
  * @return Bytes queued (fewer when the buffer is full), -1 with no session.
  */

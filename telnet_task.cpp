@@ -1,56 +1,54 @@
 /**************************************************************************
-** TELNET_TASK - WiFi, telnet login, the XMSGGW command line, and the    **
-** users' terminal sessions to the host                                  **
+** TELNET_TASK - WiFi, and the telnet connections' bytes                 **
 **                                                                       **
 ** The WiFi station handling follows HDLCGW wifi_task.cpp (station mode, **
-** no sleep, a new try every 20 s while not joined), without its TCP     **
-** frame bridge. The login, command line and session steps follow        **
-** libxmsg examples/host_tad_telnet/host_tad_telnet.c (its prompt mode). **
+** no sleep, a new try every 20 s while not joined). The telnet option   **
+** talk is libxmsg term/term_telnet.h. The login and the command line    **
+** are libxmsg's console, run by the node task (gw_console.cpp).         **
 **                                                                       **
 ** Ronny Hansen                                                          **
 ** SPDX-License-Identifier: MIT  Copyright (c) 2026 Ronny Hansen         **
 ***************************************************************************/
 #include "telnet_task.h"
 
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include <strings.h>
+
+#include <new>
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 
-#include <libxmsg/auth/auth_hash.h>
-#include <libxmsg/auth/auth_login.h>
-#include <libxmsg/term/term_line.h>
-#include <libxmsg/term/term_report.h>
+#include <libxmsg/term/term_telnet.h>
 
 #include "console_out.h"
-#include "console_task.h"
-#include "node_task.h"
 #include "settings.h"
-#include "term.h"
-#include "route_list.h"
-#include "tad_in.h"
-#include "users.h"
-
-#include <libxmsg/tad/tad_responder.h>
 
 #define WIFI_RETRY_MS 20000u
 #define HOSTNAME "xmsggw"
-#define PROMPT "XMSGGW> "
 
-/* Telnet bytes (RFC 854, 857, 858). */
-#define TN_IAC  255u
-#define TN_DONT 254u
-#define TN_DO   253u
-#define TN_WONT 252u
-#define TN_WILL 251u
-#define TN_SB   250u
-#define TN_SE   240u
-#define TN_OPT_ECHO 1u
-#define TN_OPT_SGA  3u
+/** Typed bytes waiting for the console. */
+#define CONN_IN_SIZE 512
+/** Bytes for the user waiting for the socket (a WHO of 20 users is about 1.7 KB). */
+#define CONN_OUT_SIZE 4096
+
+/** @brief One connection. The queues are shared with the node task. */
+typedef struct
+{
+    WiFiClient client;                 /* telnet task only */
+    TermTelnet tn;                     /* telnet task only */
+    volatile telnet_conn_state state;
+    volatile bool want_close;          /* node task: close once the output is out */
+    char peer[32];                     /* set before NEW */
+    uint8_t in[CONN_IN_SIZE];
+    int in_len;
+    uint8_t out[CONN_OUT_SIZE];
+    int out_len;
+    portMUX_TYPE mux;
+} conn;
+
+static conn *s_conn = NULL;            /* TELNET_TASK_USERS of them, in PSRAM */
 
 static char s_ssid[SETTINGS_SSID_SIZE];
 static char s_pass[SETTINGS_PASS_SIZE];
@@ -58,147 +56,30 @@ static volatile bool s_reconnect = false;
 static bool s_wifi_begun = false;
 static bool s_wifi_was_up = false;
 static uint32_t s_next_try = 0;
-static bool s_users_ready = false;
 
 static WiFiServer s_server(TELNET_TASK_PORT, TELNET_TASK_USERS);
 static bool s_server_running = false;
 
-/* Telnet command parser state. */
-typedef enum
-{
-    TN_DATA,
-    TN_GOT_IAC,
-    TN_GOT_OPTION_VERB,   /* WILL/WONT/DO/DONT: the option byte follows */
-    TN_IN_SB,
-    TN_IN_SB_IAC
-} tn_state;
-
-/* Where a user is. */
-typedef enum
-{
-    PH_LOGIN = 0,   /* name and password (libxmsg auth_login) */
-    PH_PROMPT,      /* at "XMSGGW> " */
-    PH_PASSWD,      /* PASSWORD: changing one's own password (the login dialogue) */
-    PH_SETPW,       /* ADDUSER / RESETPW: an admin types a password for another user */
-    PH_SESSION      /* in a terminal session to a SINTRAN system */
-} phase;
-
-/* The plain-data part of a user, in PSRAM (internal RAM is short: the login
- * dialogue alone holds two user records per user). */
-typedef struct
-{
-    phase ph;
-    TermLine line;            /* the command line / login line editor */
-    AuthLogin login;
-    char user[AUTH_NAME_MAX + 1u];
-    AuthLevel level;
-    AuthUser setpw;           /* PH_SETPW: the record being made (hash only) */
-    bool setpw_again;         /* PH_SETPW: the first entry is in, the second is due */
-    bool closing;             /* close once the text is out */
-    bool listing;             /* LIST running: its text comes, then the prompt */
-    char system[16];          /* PH_SESSION: the system asked for */
-    char remote[24];          /* "IP:port" */
-    uint32_t connected_ms;
-} user_state;
-
-/* Longest escape sequence held back to send in one piece (a TDV function key
- * is 5 bytes, ESC [ 4 6 _). Longer ones are sent as they are. */
-#define TELNET_SEQ_MAX 16
-/* A sequence still not finished this long after its ESC is sent as it is. */
-#define TELNET_SEQ_WAIT_MS 200u
-
-/** @brief One telnet user; user i always uses terminal session slot i. */
-typedef struct
-{
-    WiFiClient client;
-    bool on;
-    bool session_seen_open;   /* the session for this user has opened */
-    tn_state tn;
-    uint8_t tn_verb;
-    bool last_was_cr;
-    TermEscape esc;           /* lone ESC (the escape key) or a function key (libxmsg) */
-    uint8_t seq[TELNET_SEQ_MAX]; /* a function key's escape sequence, held until whole */
-    int seq_len;              /* 0: no sequence held */
-    uint32_t seq_at_ms;       /* when its ESC came */
-    user_state *s;            /* in PSRAM */
-    bool tad;                 /* came in from SINTRAN (tad_in.h), not over TCP */
-    bool tad_echo;            /* the echo state last asked of the caller's machine */
-} telnet_user;
-
-static telnet_user s_users[TELNET_TASK_USERS];
-
-/* Who holds each user place. Claimed from two tasks (telnet here, an
- * incoming SINTRAN call in the node task, tad_in.cpp), so under a spinlock. */
-typedef enum
-{
-    PLACE_FREE = 0,
-    PLACE_TELNET,
-    PLACE_TAD
-} place_owner;
-static volatile place_owner s_place[TELNET_TASK_USERS];
-static portMUX_TYPE s_place_mux = portMUX_INITIALIZER_UNLOCKED;
-
-/** @brief Take a free place for an owner; a place whose terminal session is still closing is not free. */
-static int claim_place(place_owner who)
-{
-    term_status ts[TELNET_TASK_USERS];
-    int got = -1;
-    for (int i = 0; i < TELNET_TASK_USERS; i++)
-    {
-        term_get_status(i, &ts[i]);
-    }
-    portENTER_CRITICAL(&s_place_mux);
-    for (int i = 0; i < TELNET_TASK_USERS && got < 0; i++)
-    {
-        if (s_place[i] == PLACE_FREE && !ts[i].open && s_users[i].s != NULL)
-        {
-            s_place[i] = who;
-            got = i;
-        }
-    }
-    portEXIT_CRITICAL(&s_place_mux);
-    return got;
-}
-
-static void free_place(int i)
-{
-    portENTER_CRITICAL(&s_place_mux);
-    s_place[i] = PLACE_FREE;
-    portEXIT_CRITICAL(&s_place_mux);
-}
-
-int telnet_task_claim_place(void)
-{
-    return claim_place(PLACE_TAD);
-}
-
-int telnet_task_places_in_use(void)
-{
-    int n = 0;
-    for (int i = 0; i < TELNET_TASK_USERS; i++)
-    {
-        if (s_place[i] != PLACE_FREE)
-        {
-            n++;
-        }
-    }
-    return n;
-}
 static telnet_task_stats s_stats;
-static AuthUser *s_list = NULL;   /* USERS_MAX records for USERS / DELUSER, in PSRAM */
-static char *s_report = NULL;     /* REPORT_SIZE for WHO, in PSRAM */
-#define REPORT_SIZE (256 + (TELNET_TASK_USERS * 160))
 
 void telnet_task_init(void)
 {
     memset(&s_stats, 0, sizeof s_stats);
     s_stats.settings_source = settings_wifi(s_ssid, s_pass);
+    /* PSRAM: internal RAM is full once WiFi is linked in. calloc gives
+     * zeroed memory, so every state starts FREE; the C++ members are made
+     * in place below. */
+    s_conn = (conn *)heap_caps_calloc(TELNET_TASK_USERS, sizeof(conn), MALLOC_CAP_SPIRAM);
+    if (s_conn == NULL)
+    {
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the telnet connections");
+        return;
+    }
     for (int i = 0; i < TELNET_TASK_USERS; i++)
     {
-        s_users[i].s = (user_state *)heap_caps_calloc(1, sizeof(user_state), MALLOC_CAP_SPIRAM);
+        new (&s_conn[i].client) WiFiClient();
+        portMUX_INITIALIZE(&s_conn[i].mux);
     }
-    s_list = (AuthUser *)heap_caps_calloc(USERS_MAX, sizeof(AuthUser), MALLOC_CAP_SPIRAM);
-    s_report = (char *)heap_caps_calloc(1, REPORT_SIZE, MALLOC_CAP_SPIRAM);
 }
 
 void telnet_task_reconnect(void)
@@ -211,1173 +92,253 @@ void telnet_task_get_stats(telnet_task_stats *out)
     *out = s_stats;
 }
 
-/** @brief The user's index, which is also its session slot. */
-static int user_index(const telnet_user *u)
+/** @brief The connection for an index, or NULL. */
+static conn *conn_at(int i)
 {
-    return (int)(u - s_users);
+    if (s_conn == NULL || i < 0 || i >= TELNET_TASK_USERS)
+    {
+        return NULL;
+    }
+    return &s_conn[i];
 }
 
-/** @brief Write to a user, counted. */
-static void user_write(telnet_user *u, const uint8_t *bytes, size_t len)
+/* ------------------------------------------------------ node task side */
+
+telnet_conn_state telnet_conn_get_state(int i)
 {
-    if (!u->on || len == 0)
+    conn *c = conn_at(i);
+    return (c == NULL) ? TELNET_CONN_FREE : c->state;
+}
+
+void telnet_conn_opened(int i, char *peer, size_t cap)
+{
+    conn *c = conn_at(i);
+    if (c == NULL)
     {
         return;
     }
-    if (u->tad)
+    if (peer != NULL && cap > 0)
     {
-        s_stats.bytes_to_user += (uint32_t)tad_in_write(user_index(u), bytes, (int)len);
-        return;
+        (void)snprintf(peer, cap, "%s", c->peer);
     }
-    s_stats.bytes_to_user += (uint32_t)u->client.write(bytes, len);
-}
-
-/**
- * @brief Whether the user sees what they type. Telnet: the line editor
- *        echoes. From SINTRAN: the caller's own machine echoes, so the line
- *        editor must not, and it is told when to stop (a password).
- */
-static void set_echo(telnet_user *u, bool on)
-{
-    if (u->tad)
+    portENTER_CRITICAL(&c->mux);
+    if (c->state == TELNET_CONN_NEW)
     {
-        u->s->line.echo = false;
-        if (on != u->tad_echo)
-        {
-            u->tad_echo = on;
-            tad_in_echo(user_index(u), on);
-        }
-        return;
+        c->state = TELNET_CONN_OPEN;
     }
-    u->s->line.echo = on;
+    portEXIT_CRITICAL(&c->mux);
 }
 
-/** @brief Write text to a user. */
-static void user_say(telnet_user *u, const char *text)
+int telnet_conn_read(int i, uint8_t *out, int max)
 {
-    user_write(u, (const uint8_t *)text, strlen(text));
-}
-
-/** @brief Write formatted text to a user. */
-static void user_printf(telnet_user *u, const char *fmt, ...)
-{
-    char text[200];
-    va_list ap;
-    va_start(ap, fmt);
-    int n = vsnprintf(text, sizeof text, fmt, ap);
-    va_end(ap);
+    conn *c = conn_at(i);
+    int n;
+    if (c == NULL || max <= 0)
+    {
+        return 0;
+    }
+    portENTER_CRITICAL(&c->mux);
+    n = (c->in_len < max) ? c->in_len : max;
     if (n > 0)
     {
-        user_write(u, (const uint8_t *)text,
-                   (size_t)((n < (int)sizeof text) ? n : (int)sizeof text - 1));
+        memcpy(out, c->in, (size_t)n);
+        memmove(c->in, &c->in[n], (size_t)(c->in_len - n));
+        c->in_len -= n;
+    }
+    portEXIT_CRITICAL(&c->mux);
+    return n;
+}
+
+int telnet_conn_write(int i, const uint8_t *bytes, int len)
+{
+    conn *c = conn_at(i);
+    int n;
+    if (c == NULL || len <= 0)
+    {
+        return 0;
+    }
+    portENTER_CRITICAL(&c->mux);
+    n = CONN_OUT_SIZE - c->out_len;
+    if (n > len)
+    {
+        n = len;
+    }
+    if (c->state != TELNET_CONN_OPEN)
+    {
+        n = 0;   /* the client is gone: nobody to read it */
+    }
+    if (n > 0)
+    {
+        memcpy(&c->out[c->out_len], bytes, (size_t)n);
+        c->out_len += n;
+    }
+    portEXIT_CRITICAL(&c->mux);
+    return n;
+}
+
+void telnet_conn_close(int i)
+{
+    conn *c = conn_at(i);
+    if (c != NULL)
+    {
+        c->want_close = true;
     }
 }
 
-/** @brief End a user's connection and the session behind it. */
-static void user_drop(telnet_user *u, const char *why)
+void telnet_conn_release(int i)
 {
-    term_status ts;
-    int i = user_index(u);
-    term_get_status(i, &ts);
-    if (ts.open)
-    {
-        term_hangup(i);
-    }
-    if (u->on && !u->tad)
-    {
-        u->client.stop();
-    }
-    u->on = false;
-    s_stats.users_on--;
-    if (u->tad)
-    {
-        /* The place stays taken until the SINTRAN side has closed too
-         * (telnet_task_run frees it then). */
-        tad_in_release(i);
-    }
-    else
-    {
-        free_place(i);
-    }
-    /* The login dialogue and the line may hold password hashes or typing. */
-    if (u->s->listing)
-    {
-        route_list_cancel(i);
-    }
-    auth_wipe(u->s, sizeof *u->s);
-    console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d gone: %s", i, why);
-}
-
-/** @brief The prompt for where the user is; sets the line's echo to match. */
-static void show_prompt(telnet_user *u)
-{
-    user_state *s = u->s;
-    const char *p;
-    switch (s->ph)
-    {
-    case PH_LOGIN:
-        p = auth_login_prompt(&s->login);
-        if (p != NULL)
-        {
-            set_echo(u, auth_login_echo(&s->login));
-            user_say(u, p);
-        }
-        break;
-    case PH_PASSWD:
-        set_echo(u, false);
-        p = auth_login_prompt(&s->login);
-        if (p != NULL)
-        {
-            user_say(u, p);
-        }
-        break;
-    case PH_SETPW:
-        set_echo(u, false);
-        user_printf(u, "%s for %s: ", s->setpw_again ? "again" : "new password", s->setpw.name);
-        break;
-    case PH_PROMPT:
-        set_echo(u, true);
-        user_say(u, PROMPT);
-        break;
-    case PH_SESSION:
-    default:
-        break;
-    }
-}
-
-/** @brief Back to the command line (after a session, or a refused CONNECT). */
-static void to_prompt(telnet_user *u)
-{
-    u->s->ph = PH_PROMPT;
-    term_line_init(&u->s->line, true);
-    show_prompt(u);
-}
-
-/** @brief A new telnet user: negotiate, greet, ask for the name. */
-static void user_start(telnet_user *u)
-{
-    static const uint8_t NEGOTIATE[] = { TN_IAC, TN_WILL, TN_OPT_ECHO, TN_IAC, TN_WILL, TN_OPT_SGA };
-    user_state *s = u->s;
-    int i = user_index(u);
-
-    u->on = true;
-    s_stats.users_on++;
-    s_stats.users++;
-    u->tn = TN_DATA;
-    u->last_was_cr = false;
-    u->session_seen_open = false;
-    /* libxmsg's default 50 ms, as its own telnet bridge uses (host_tad_telnet.c). */
-    term_escape_init(&u->esc, TERM_ESCAPE_DEFAULT_MS);
-    u->seq_len = 0;
-    u->client.setNoDelay(true);
-    user_write(u, NEGOTIATE, sizeof NEGOTIATE);
-
-    memset(s, 0, sizeof *s);
-    s->connected_ms = millis();
-    (void)snprintf(s->remote, sizeof s->remote, "%s:%u",
-                   u->client.remoteIP().toString().c_str(), (unsigned)u->client.remotePort());
-    s->ph = PH_LOGIN;
-    term_line_init(&s->line, true);
-    if (!s_users_ready
-        || auth_login_init(&s->login, users_store(), users_random(), AUTH_LOGIN_TRIES,
-                           AUTH_LOGIN_DELAY_MS) != 0)
-    {
-        user_say(u, "\r\nXMSGGW: the user list cannot be read. Try again later.\r\n");
-        user_drop(u, "no user list");
-        return;
-    }
-    user_printf(u, "\r\nXMSGGW %s, node %u\r\n", XMSGGW_VERSION, (unsigned)settings_node());
-    console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d on from %s", i, s->remote);
-    show_prompt(u);
-}
-
-/** @brief A user who came in from SINTRAN (CONNECT-TO D101): greet, ask for the name. */
-static void tad_user_start(telnet_user *u)
-{
-    user_state *s = u->s;
-    int i = user_index(u);
-
-    u->tad = true;
-    u->tad_echo = true;       /* tad_in.cpp sends ECKM 01 when the session starts */
-    u->on = true;
-    s_stats.users_on++;
-    s_stats.users++;
-    u->tn = TN_DATA;
-    u->last_was_cr = false;
-    u->session_seen_open = false;
-    term_escape_init(&u->esc, TERM_ESCAPE_DEFAULT_MS);
-    u->seq_len = 0;
-
-    memset(s, 0, sizeof *s);
-    s->connected_ms = millis();
-    tad_in_describe(i, s->remote, sizeof s->remote);
-    s->ph = PH_LOGIN;
-    term_line_init(&s->line, false);
-    if (!s_users_ready
-        || auth_login_init(&s->login, users_store(), users_random(), AUTH_LOGIN_TRIES,
-                           AUTH_LOGIN_DELAY_MS) != 0)
-    {
-        user_say(u, "\r\nXMSGGW: the user list cannot be read. Try again later.\r\n");
-        s->closing = true;
-        return;
-    }
-    user_printf(u, "\r\nXMSGGW %s, node %u\r\n", XMSGGW_VERSION, (unsigned)settings_node());
-    console_out_log(CONTROL_FRAME_LOG_INFO, "User %d on from SINTRAN, %s", i, s->remote);
-    show_prompt(u);
-}
-
-/* ------------------------------------------------------------ commands */
-
-static void cmd_help(telnet_user *u)
-{
-    user_say(u, "CONNECT <system>   connect to a system: its number or an alias, e.g. CONNECT 102\r\n"
-                "LIST               the systems that can be reached\r\n"
-                "WHO                the users on this gateway\r\n"
-                "INFO               the gateway and its link to the host\r\n"
-                "PASSWORD           change your password\r\n"
-                "HELP               this text\r\n"
-                "EXIT, LOGOUT, QUIT close the connection\r\n");
-    if (u->s->level == AUTH_LEVEL_ADMIN)
-    {
-        user_say(u, "USERS              the users (admin)\r\n"
-                    "ADDUSER name <admin>  add a user (admin)\r\n"
-                    "DELUSER name       delete a user (admin)\r\n"
-                    "RESETPW name       set a new password, changed at login (admin)\r\n"
-                    "NODE <n>           show or store our node number, used after RESTART (admin)\r\n"
-                    "RESTART            restart the gateway; every session ends (admin)\r\n");
-    }
-    user_say(u, "In a session: ESC alone breaks the running program; log out of SINTRAN to\r\n"
-                "come back here.\r\n");
-}
-
-static void cmd_who(telnet_user *self)
-{
-    TermWhoEntry e[TELNET_TASK_USERS];
-    term_status ts[TELNET_TASK_USERS];
-    uint32_t now = millis();
-    size_t n = 0;
-    if (s_report == NULL)
+    conn *c = conn_at(i);
+    if (c == NULL)
     {
         return;
     }
+    portENTER_CRITICAL(&c->mux);
+    if (c->state == TELNET_CONN_GONE)
+    {
+        c->in_len = 0;
+        c->out_len = 0;
+        c->want_close = false;
+        c->state = TELNET_CONN_FREE;
+    }
+    portEXIT_CRITICAL(&c->mux);
+}
+
+/* ---------------------------------------------------- telnet task side */
+
+/** @brief Stop the socket and mark the connection GONE for the node task. */
+static void conn_drop(conn *c, const char *why)
+{
+    int i = (int)(c - s_conn);
+    c->client.stop();
+    portENTER_CRITICAL(&c->mux);
+    c->state = TELNET_CONN_GONE;
+    c->out_len = 0;
+    portEXIT_CRITICAL(&c->mux);
+    if (s_stats.users_on > 0)
+    {
+        s_stats.users_on--;
+    }
+    console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet connection %d (%s): %s", i, c->peer, why);
+}
+
+/** @brief A new client: a free connection, or turned away. */
+static void conn_accept(WiFiClient &incoming)
+{
     for (int i = 0; i < TELNET_TASK_USERS; i++)
     {
-        const telnet_user *u = &s_users[i];
-        if (!u->on)
+        conn *c = &s_conn[i];
+        if (c->state != TELNET_CONN_FREE)
         {
             continue;
         }
-        term_get_status(i, &ts[n]);
-        e[n].terminal = i + 1;
-        e[n].user = (u->s->ph == PH_LOGIN) ? NULL : u->s->user;
-        e[n].remote = u->s->remote;
-        e[n].connected_s = (now - u->s->connected_ms) / 1000u;
-        e[n].system = (u->s->ph == PH_SESSION) ? u->s->system : NULL;
-        e[n].session_state = ts[n].state;
-        e[n].is_self = (u == self);
-        n++;
-    }
-    if (term_report_who(e, n, s_report, REPORT_SIZE) > 0)
-    {
-        user_say(self, s_report);
-    }
-}
-
-static void cmd_info(telnet_user *u)
-{
-    node_status st;
-    node_task_get_status(&st);
-    user_printf(u, "XMSGGW %s, built %s %s\r\n", XMSGGW_VERSION, __DATE__, __TIME__);
-    user_printf(u, "node %u, host node %ld, link %s\r\n", (unsigned)st.own_node,
-                (long)st.peer_node, st.ready ? "ready" : (st.up ? "up, not ready" : "down"));
-    user_printf(u, "frames in %lu out %lu, datagrams in %lu out %lu, bad FCS %lu\r\n",
-                (unsigned long)st.frames_in, (unsigned long)st.frames_out,
-                (unsigned long)st.datagrams_in, (unsigned long)st.datagrams_out,
-                (unsigned long)st.bad_crc);
-    user_printf(u, "telnet users on %lu of %d, turned away %lu\r\n",
-                (unsigned long)s_stats.users_on, TELNET_TASK_USERS,
-                (unsigned long)s_stats.refused);
-    user_printf(u, "last password check %lu ms, telnet stack free %lu, uptime %lu s\r\n",
-                (unsigned long)users_last_hash_ms(),
-                (unsigned long)uxTaskGetStackHighWaterMark(NULL),
-                (unsigned long)(millis() / 1000u));
-}
-
-/** @brief CONNECT <system>: open the user's session slot. */
-static void cmd_connect(telnet_user *u, const char *system)
-{
-    node_status st;
-    int i = user_index(u);
-    if (strlen(system) >= sizeof u->s->system)
-    {
-        user_say(u, "that system name is too long\r\n");
-        show_prompt(u);
+        uint8_t open[TERM_TELNET_OPEN_MAX];
+        c->client = incoming;
+        c->client.setNoDelay(true);
+        /* No BINARY: XMSGGW's line is 7-bit text (term_telnet.h). */
+        term_telnet_init(&c->tn, false);
+        int n = term_telnet_open(&c->tn, open, sizeof open);
+        if (n > 0)
+        {
+            (void)c->client.write(open, (size_t)n);
+        }
+        (void)snprintf(c->peer, sizeof c->peer, "%s:%u",
+                       c->client.remoteIP().toString().c_str(), (unsigned)c->client.remotePort());
+        c->in_len = 0;
+        c->out_len = 0;
+        c->want_close = false;
+        s_stats.users++;
+        s_stats.users_on++;
+        console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet connection %d from %s", i, c->peer);
+        c->state = TELNET_CONN_NEW;   /* last: the node task may take it now */
         return;
     }
-    node_task_get_status(&st);
-    if (!st.ready)
-    {
-        user_say(u, "the link to the host is not up; try again later\r\n");
-        show_prompt(u);
-        return;
-    }
-    int rc = term_open(i, system, u->s->user);
-    if (rc == -2)
-    {
-        user_printf(u, "%s is not a system number, and not a known alias\r\n", system);
-        show_prompt(u);
-        return;
-    }
-    if (rc != 0)
-    {
-        user_say(u, "this terminal session is still closing; try again\r\n");
-        show_prompt(u);
-        return;
-    }
-    /* The length was checked above: it fits with its NUL. */
-    memcpy(u->s->system, system, strlen(system) + 1u);
-    u->s->ph = PH_SESSION;
-    u->session_seen_open = false;
-    u->last_was_cr = false;
-    term_escape_init(&u->esc, TERM_ESCAPE_DEFAULT_MS);
-    u->seq_len = 0;
-    user_printf(u, "connecting to %s...\r\n", system);
-    console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): connect %s", i, u->s->user,
-                    system);
+    incoming.print("\r\nXMSGGW: all telnet connections are in use. Try again later.\r\n");
+    incoming.stop();
+    s_stats.refused++;
 }
 
-static void cmd_users(telnet_user *u)
-{
-    int n = users_read(s_list, USERS_MAX);
-    for (int i = 0; i < n; i++)
-    {
-        user_printf(u, "%-32s %-5s%s\r\n", s_list[i].name,
-                    (s_list[i].level == AUTH_LEVEL_ADMIN) ? "admin" : "user",
-                    s_list[i].must_change ? "  must change password" : "");
-    }
-    auth_wipe(s_list, USERS_MAX * sizeof(AuthUser));
-}
-
-static void cmd_deluser(telnet_user *u, const char *name)
-{
-    int n = users_read(s_list, USERS_MAX);
-    int at = -1;
-    for (int i = 0; i < n; i++)
-    {
-        if (strcmp(s_list[i].name, name) == 0)
-        {
-            at = i;
-        }
-    }
-    if (at < 0)
-    {
-        user_printf(u, "no user %s\r\n", name);
-    }
-    else if (auth_users_is_last_admin(s_list, (size_t)n, name))
-    {
-        user_printf(u, "%s is the last admin and cannot be deleted\r\n", name);
-    }
-    else
-    {
-        s_list[at] = s_list[n - 1];
-        n--;
-        if (users_write(s_list, n) == 0)
-        {
-            console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): deleted user %s",
-                            user_index(u), u->s->user, name);
-            user_printf(u, "user %s deleted\r\n", name);
-        }
-        else
-        {
-            user_say(u, "cannot write the user list\r\n");
-        }
-    }
-    auth_wipe(s_list, USERS_MAX * sizeof(AuthUser));
-}
-
-/** @brief ADDUSER and RESETPW: check the name, then ask the password twice. */
-static void cmd_setpw_begin(telnet_user *u, const char *name, bool add, AuthLevel level)
-{
-    user_state *s = u->s;
-    AuthUser found;
-    bool exists;
-    if (!auth_name_is_valid(name))
-    {
-        user_printf(u, "a user name is 1 to %u characters, no blank and no ':'\r\n",
-                    AUTH_NAME_MAX);
-        return;
-    }
-    exists = users_lookup(name, &found) == 0;
-    auth_wipe(&found, sizeof found);
-    if (add && exists)
-    {
-        user_printf(u, "user %s exists; RESETPW sets a new password\r\n", name);
-        return;
-    }
-    if (!add && !exists)
-    {
-        user_printf(u, "no user %s\r\n", name);
-        return;
-    }
-    memset(&s->setpw, 0, sizeof s->setpw);
-    (void)snprintf(s->setpw.name, sizeof s->setpw.name, "%s", name);
-    s->setpw.level = level;
-    s->setpw.iterations = add ? 0u : 1u; /* 0: a new user, made at the first entry */
-    s->setpw_again = false;
-    s->ph = PH_SETPW;
-}
-
-/** @brief A line typed in PH_SETPW (wiped by the caller). */
-static void setpw_line(telnet_user *u, const char *text)
-{
-    user_state *s = u->s;
-    AuthUser rec;
-    if (!s->setpw_again)
-    {
-        int rc;
-        if (text[0] == '\0')
-        {
-            user_say(u, "an empty password is not allowed\r\n");
-            s->ph = PH_PROMPT;
-            return;
-        }
-        if (s->setpw.iterations == 0u)
-        {
-            AuthLevel level = s->setpw.level;
-            rc = auth_user_make(&rec, s->setpw.name, text, USERS_ITERATIONS,
-                                users_random());
-            rec.level = level;
-            if (rc == 0)
-            {
-                rec.must_change = true; /* the admin knows it; the user picks their own */
-            }
-        }
-        else
-        {
-            rc = (users_lookup(s->setpw.name, &rec) == 0)
-                     ? auth_user_reset_password(&rec, text, users_random())
-                     : -1;
-        }
-        if (rc != 0)
-        {
-            user_say(u, "could not set the password\r\n");
-            auth_wipe(&rec, sizeof rec);
-            s->ph = PH_PROMPT;
-            return;
-        }
-        s->setpw = rec;
-        auth_wipe(&rec, sizeof rec);
-        s->setpw_again = true;
-        return;
-    }
-    if (!auth_user_check(&s->setpw, text))
-    {
-        user_say(u, "the two passwords differ; nothing changed\r\n");
-    }
-    else if (users_put(&s->setpw) != 0)
-    {
-        user_say(u, "cannot write the user list\r\n");
-    }
-    else
-    {
-        console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): set the password of %s",
-                        user_index(u), s->user, s->setpw.name);
-        user_printf(u, "password of %s set; it must be changed at the next login\r\n",
-                    s->setpw.name);
-    }
-    auth_wipe(&s->setpw, sizeof s->setpw);
-    s->ph = PH_PROMPT;
-}
-
-/** @brief A line typed in PH_PASSWD (the user's own change, through the login dialogue). */
-static void passwd_line(telnet_user *u, const char *text, uint32_t now)
-{
-    user_state *s = u->s;
-    AuthLoginState st = auth_login_line(&s->login, text, now);
-    AuthLoginNote note = auth_login_take_note(&s->login);
-    if (note != AUTH_NOTE_NONE)
-    {
-        user_printf(u, "%s\r\n", auth_login_note_text(note));
-    }
-    if (note == AUTH_NOTE_CHANGED)
-    {
-        console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): changed the password",
-                        user_index(u), s->user);
-    }
-    if (st == AUTH_LOGIN_DONE)
-    {
-        s->ph = PH_PROMPT;
-    }
-}
-
-/** @brief Whether an admin command may run; tells the user when not. */
-static bool admin_only(telnet_user *u)
-{
-    if (u->s->level == AUTH_LEVEL_ADMIN)
-    {
-        return true;
-    }
-    user_say(u, "not allowed\r\n");
-    return false;
-}
-
-/**
- * @brief Whether the command word of a line is `word` (case ignored).
- * @param[out] args  Set to the text after the word, spaces skipped.
- */
-static bool word_is(const char *text, const char *word, const char **args)
-{
-    size_t n = strlen(word);
-    while (*text == ' ')
-    {
-        text++;
-    }
-    if (strncasecmp(text, word, n) != 0 || (text[n] != '\0' && text[n] != ' '))
-    {
-        return false;
-    }
-    text += n;
-    while (*text == ' ')
-    {
-        text++;
-    }
-    *args = text;
-    return true;
-}
-
-/** @brief NODE [n] (admin): the USB console's NODE, on the command line. */
-static void cmd_node(telnet_user *u, const char *args)
-{
-    node_status st;
-    if (*args == '\0')
-    {
-        node_task_get_status(&st);
-        user_printf(u, "stored node number %u, running as %u\r\n", (unsigned)settings_node(),
-                    (unsigned)st.own_node);
-        return;
-    }
-    char *end = NULL;
-    unsigned long value = strtoul(args, &end, 10);
-    while (*end == ' ')
-    {
-        end++;
-    }
-    if (end == args || *end != '\0' || value == 0 || value > 65535u)
-    {
-        user_say(u, "NODE takes a number from 1 to 65535\r\n");
-        return;
-    }
-    if (settings_set_node((uint16_t)value) != 0)
-    {
-        user_say(u, "could not store the node number\r\n");
-        return;
-    }
-    console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): node number %lu stored",
-                    user_index(u), u->s->user, value);
-    user_printf(u, "node number %lu stored; RESTART to use it\r\n", value);
-}
-
-/** @brief RESTART (admin): restart the gateway, as the USB console's RESET does. */
-static void cmd_restart(telnet_user *u)
-{
-    console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): restart", user_index(u),
-                    u->s->user);
-    user_say(u, "restarting; every session ends\r\n");
-    if (!u->tad)
-    {
-        u->client.flush();
-    }
-    console_out_flush();
-    delay(300);   /* let the text reach the user before everything stops */
-    ESP.restart();
-}
-
-/** @brief One line typed at the prompt. */
-/* size exemption: command table */
-static void prompt_line(telnet_user *u, const char *text)
-{
-    const char *rest = NULL;
-    /* XMSGGW's own commands, not in libxmsg's list (term_line.h). */
-    if (word_is(text, "NODE", &rest))
-    {
-        if (admin_only(u))
-        {
-            cmd_node(u, rest);
-        }
-        show_prompt(u);
-        return;
-    }
-    if (word_is(text, "RESTART", &rest))
-    {
-        if (admin_only(u))
-        {
-            cmd_restart(u);
-        }
-        show_prompt(u);
-        return;
-    }
-    char arg[AUTH_NAME_MAX + 1u];
-    TermCmd cmd = term_cmd_parse(text, arg, sizeof arg);
-    if (strlen(arg) > AUTH_NAME_MAX)
-    {
-        cmd = TERM_CMD_UNKNOWN;
-    }
-    switch (cmd)
-    {
-    case TERM_CMD_EMPTY:
-        break;
-    case TERM_CMD_CONNECT:
-        cmd_connect(u, arg);   /* no prompt after it: the host's banner comes */
-        return;
-    case TERM_CMD_LIST:
-        /* Asks the host for its whole routing table (route_list.h); the
-         * prompt comes back when the list has ended. */
-        if (route_list_start(user_index(u)) == 0)
-        {
-            u->s->listing = true;
-            return;
-        }
-        user_say(u, "LIST: another user's LIST is running; try again\r\n");
-        break;
-    case TERM_CMD_WHO:
-        cmd_who(u);
-        break;
-    case TERM_CMD_INFO:
-        cmd_info(u);
-        break;
-    case TERM_CMD_HELP:
-        cmd_help(u);
-        break;
-    case TERM_CMD_EXIT:
-        user_say(u, "bye\r\n");
-        u->s->closing = true;
-        return;
-    case TERM_CMD_PASSWORD:
-        if (auth_login_change_begin(&u->s->login) == 0)
-        {
-            u->s->ph = PH_PASSWD;
-        }
-        else
-        {
-            user_printf(u, "%s\r\n", auth_login_note_text(auth_login_take_note(&u->s->login)));
-        }
-        break;
-    case TERM_CMD_USERS:
-        if (admin_only(u))
-        {
-            cmd_users(u);
-        }
-        break;
-    case TERM_CMD_ADDUSER:
-        /* fall through */
-    case TERM_CMD_ADDADMIN:
-        if (admin_only(u))
-        {
-            cmd_setpw_begin(u, arg, true,
-                            (cmd == TERM_CMD_ADDADMIN) ? AUTH_LEVEL_ADMIN : AUTH_LEVEL_USER);
-        }
-        break;
-    case TERM_CMD_DELUSER:
-        if (admin_only(u))
-        {
-            cmd_deluser(u, arg);
-        }
-        break;
-    case TERM_CMD_RESETPW:
-        if (admin_only(u))
-        {
-            cmd_setpw_begin(u, arg, false, AUTH_LEVEL_USER);
-        }
-        break;
-    case TERM_CMD_UNKNOWN:
-        /* fall through */
-    default:
-        user_say(u, "unknown command; HELP lists them\r\n");
-        break;
-    }
-    show_prompt(u);
-}
-
-/** @brief One line typed at the login (it may be a password; wiped by the caller). */
-static void login_line(telnet_user *u, const char *text, uint32_t now)
-{
-    user_state *s = u->s;
-    int i = user_index(u);
-    AuthLoginState before = s->login.state;
-    AuthLoginState st = auth_login_line(&s->login, text, now);
-    AuthLoginNote note = auth_login_take_note(&s->login);
-    if (note != AUTH_NOTE_NONE)
-    {
-        user_printf(u, "%s\r\n", auth_login_note_text(note));
-    }
-    if (st == AUTH_LOGIN_NEW_PASSWORD && before == AUTH_LOGIN_PASSWORD)
-    {
-        user_say(u, "You must set a new password before going on.\r\n");
-    }
-    switch (st)
-    {
-    case AUTH_LOGIN_DONE:
-        (void)snprintf(s->user, sizeof s->user, "%s", s->login.name);
-        s->level = auth_login_level(&s->login);
-        console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d: logged in as %s (%s)%s", i,
-                        s->user, (s->level == AUTH_LEVEL_ADMIN) ? "admin" : "user",
-                        (note == AUTH_NOTE_CHANGED) ? ", new password stored" : "");
-        /* A record stored with another round count (the 100000 of the first
-         * build) is stored again at USERS_ITERATIONS, from the password just
-         * typed: a password change keeps the record's own count (libxmsg
-         * auth_user.c), so it would otherwise never move. */
-        if (before == AUTH_LOGIN_PASSWORD)
-        {
-            AuthUser rec;
-            if (users_lookup(s->user, &rec) == 0 && rec.iterations != USERS_ITERATIONS)
-            {
-                AuthUser fresh;
-                if (auth_user_make(&fresh, rec.name, text, USERS_ITERATIONS, users_random()) == 0)
-                {
-                    fresh.level = rec.level;
-                    fresh.must_change = rec.must_change;
-                    console_out_log(CONTROL_FRAME_LOG_INFO,
-                                    "Telnet user %d: %s re-stored at %u rounds (was %lu): %s", i,
-                                    s->user, USERS_ITERATIONS, (unsigned long)rec.iterations,
-                                    (users_put(&fresh) == 0) ? "ok" : "write failed");
-                }
-                auth_wipe(&fresh, sizeof fresh);
-            }
-            auth_wipe(&rec, sizeof rec);
-        }
-        user_say(u, "Logged in. HELP lists the commands.\r\n");
-        if (u->tad)
-        {
-            /* SYCN 000A after a login, as the real host sends: by the C#
-             * notes it stops D100's one-minute "not logged in" timer
-             * (tad_responder.h; unverified). */
-            tad_in_login_state(i, TAD_SYCN_LOGGED_IN);
-        }
-        to_prompt(u);
-        break;
-    case AUTH_LOGIN_WAIT:
-        console_out_log(CONTROL_FRAME_LOG_WARN, "Telnet user %d: login failed", i);
-        user_say(u, "Login incorrect\r\n");
-        break;
-    case AUTH_LOGIN_REFUSED:
-        console_out_log(CONTROL_FRAME_LOG_WARN, "Telnet user %d: login refused", i);
-        if (note == AUTH_NOTE_NONE)
-        {
-            user_say(u, "Login incorrect\r\n");
-        }
-        s->closing = true;
-        break;
-    default:
-        show_prompt(u);
-        break;
-    }
-}
-
-/** @brief A byte for the gateway's own command line or login. */
-static void line_byte(telnet_user *u, uint8_t k)
-{
-    user_state *s = u->s;
-    uint8_t echo[3];
-    size_t el = 0;
-    uint32_t now = millis();
-    if (s->closing || s->listing || (s->ph == PH_LOGIN && s->login.state == AUTH_LOGIN_WAIT))
-    {
-        return; /* typed while a failed login waits: thrown away */
-    }
-    int done = term_line_byte(&s->line, k, echo, &el);
-    user_write(u, echo, el);
-    if (done != 1)
-    {
-        return;
-    }
-    char text[TERM_LINE_MAX + 1u];
-    memcpy(text, s->line.text, sizeof text);
-    term_line_clear(&s->line);
-    if (s->ph == PH_LOGIN)
-    {
-        login_line(u, text, now);
-    }
-    else if (s->ph == PH_PASSWD)
-    {
-        passwd_line(u, text, now);
-        show_prompt(u);
-    }
-    else if (s->ph == PH_SETPW)
-    {
-        setpw_line(u, text);
-        show_prompt(u);
-    }
-    else
-    {
-        prompt_line(u, text);
-    }
-    auth_wipe(text, sizeof text);
-}
-
-/* ------------------------------------------------------------- telnet */
-
-/**
- * @brief Handle one telnet command byte.
- * @return true when the byte was part of a telnet command (not data).
- */
-static bool user_telnet(telnet_user *u, uint8_t c)
-{
-    switch (u->tn)
-    {
-    case TN_GOT_IAC:
-        if (c == TN_WILL || c == TN_WONT || c == TN_DO || c == TN_DONT)
-        {
-            u->tn_verb = c;
-            u->tn = TN_GOT_OPTION_VERB;
-        }
-        else if (c == TN_SB)
-        {
-            u->tn = TN_IN_SB;
-        }
-        else
-        {
-            /* IAC IAC (data 255: SINTRAN text is 7-bit, dropped), NOP, GA,
-             * AYT and the rest: ignored. */
-            u->tn = TN_DATA;
-        }
-        return true;
-
-    case TN_GOT_OPTION_VERB:
-        u->tn = TN_DATA;
-        /* We offered ECHO and SGA; a DO for those is the agreement. Refuse
-         * anything else the client asks us to do, and say DONT to anything
-         * it offers. */
-        if (u->tn_verb == TN_DO && c != TN_OPT_ECHO && c != TN_OPT_SGA)
-        {
-            const uint8_t r[] = { TN_IAC, TN_WONT, c };
-            user_write(u, r, sizeof r);
-        }
-        else if (u->tn_verb == TN_WILL && c != TN_OPT_SGA)
-        {
-            const uint8_t r[] = { TN_IAC, TN_DONT, c };
-            user_write(u, r, sizeof r);
-        }
-        return true;
-
-    case TN_IN_SB:
-        if (c == TN_IAC)
-        {
-            u->tn = TN_IN_SB_IAC;
-        }
-        return true;
-
-    case TN_IN_SB_IAC:
-        u->tn = (c == TN_SE) ? TN_DATA : TN_IN_SB;
-        return true;
-
-    case TN_DATA:
-    default:
-        if (c == TN_IAC)
-        {
-            u->tn = TN_GOT_IAC;
-            return true;
-        }
-        return false;
-    }
-}
-
-/** @brief Send a held escape sequence to the host, all in one go, not echoed. */
-static void seq_flush(telnet_user *u)
-{
-    if (u->seq_len > 0)
-    {
-        (void)term_type(user_index(u), u->seq, u->seq_len);
-        u->seq_len = 0;
-    }
-}
-
-/**
- * @brief Add one byte to a held escape sequence (ECMA-48 shape: ESC, then for
- *        CSI "[" parameter bytes 0x30-0x3F and intermediates 0x20-0x2F up to a
- *        final byte 0x40-0x7E; otherwise intermediates 0x20-0x2F up to a
- *        final 0x30-0x7E).
- * @return true when the byte was taken (the sequence is sent once whole);
- *         false when it cannot be part of one: the held bytes are sent first
- *         and the caller handles the byte itself.
- */
-static bool seq_byte(telnet_user *u, uint8_t b)
-{
-    bool done;
-
-    if (b < 0x20u || b > 0x7Eu)
-    {
-        seq_flush(u);
-        return false;
-    }
-    if (u->seq_len == 1)
-    {
-        done = (b >= 0x30u && b != '[');
-    }
-    else if (u->seq[1] == '[')
-    {
-        done = (b >= 0x40u);
-    }
-    else
-    {
-        done = (b >= 0x30u);
-    }
-    u->seq[u->seq_len++] = b;
-    if (done || u->seq_len >= TELNET_SEQ_MAX)
-    {
-        seq_flush(u);
-    }
-    return true;
-}
-
-/**
- * @brief One byte typed in a session: CR LF and CR NUL made into CR, data to
- *        the host (echoed if the host asks).
- */
-static void session_byte(telnet_user *u, uint8_t c)
-{
-    int i = user_index(u);
-    term_status ts;
-
-    if (u->last_was_cr && (c == '\n' || c == 0))
-    {
-        u->last_was_cr = false;
-        return;             /* the second half of CR LF or CR NUL */
-    }
-    u->last_was_cr = (c == '\r');
-    if (c == '\n')
-    {
-        c = '\r';           /* a client that sends a bare LF for Enter */
-    }
-
-    if (u->tad)
-    {
-        /* From SINTRAN the escape key comes as its own message (ESCA,
-         * tad_in_take_escape), so an ESC in the text is a function key and
-         * goes on as it is. The caller's machine echoes; it is told to stop
-         * when the onward host asks for no echo (a password). */
-        term_get_status(i, &ts);
-        set_echo(u, ts.echo);
-        (void)term_type(i, &c, 1);
-        return;
-    }
-
-    /* The lone-ESC rule (libxmsg term_escape.h, as host_tad_telnet.c does):
-     * an ESC with nothing after it within 50 ms is the escape key and goes to
-     * the host as an ESCA, not as a typed byte; an ESC followed at once by
-     * more bytes is a function key and goes through as text, unchanged. */
-    /* A function key (an escape sequence) is held until whole, then queued
-     * at once and never echoed locally: a terminal does not echo its own
-     * keys. How many of its bytes go in each TAD data letter is the host's
-     * choice, not ours: libxmsg's asker (e961a02) cuts the input at the
-     * host's break characters and waits for the next input grant. In
-     * S3-CONFIG the host breaks on every character, and SINTRAN's own asker
-     * on D102 sent SLUTT one byte per letter, S3-CONFIG then exiting (hub
-     * capture, 2026-11-10 11:55:32). Sending all five in one letter, as an
-     * earlier build here did, got BEL. */
-    if (u->seq_len > 0 && seq_byte(u, c))
-    {
-        return;
-    }
-
-    uint8_t out[2];
-    bool escape = false;
-    int n = term_escape_byte(&u->esc, c, millis(), out, &escape);
-    if (escape)
-    {
-        term_escape(i);
-    }
-    term_get_status(i, &ts);
-    for (int k = 0; k < n; k++)
-    {
-        uint8_t b = out[k];
-        if (u->seq_len > 0 && seq_byte(u, b))
-        {
-            continue;   /* the byte after the ESC that started a sequence */
-        }
-        if (b == TERM_ESC && k + 1 < n)
-        {
-            /* term_escape_byte gave the held ESC back with the byte after
-             * it: a function key starts here. */
-            u->seq[0] = b;
-            u->seq_len = 1;
-            u->seq_at_ms = millis();
-            continue;
-        }
-        (void)term_type(i, &b, 1);
-        /* No local echo for a password, a function key's ESC, or the Enter
-         * key: the host sends its own CR LF for the CR (tad_asker.h: after
-         * "sys" + CR the host sent only CR LF). Echoing CR here gave the user
-         * two new lines per Enter (Ronny's log, 2026-11-09 23:37:39: our
-         * CR LF at +9 ms, then the host's CR LF CR LF "R@" at +298 ms). */
-        if (!ts.echo || b == TERM_ESC || b == '\r')
-        {
-            continue;
-        }
-        if (b == 8u || b == 127u)
-        {
-            user_say(u, "\b \b");
-        }
-        else
-        {
-            user_write(u, &b, 1);
-        }
-    }
-}
-
-/** @brief The session part of a user's turn: host text out, the end noticed. */
-static void session_pass(telnet_user *u)
+/** @brief One connection's turn: bytes in, bytes out, the end. */
+static void conn_pass(conn *c)
 {
     uint8_t buf[256];
-    term_status ts;
-    int i = user_index(u);
-    int n;
-
-    /* A held ESC with no byte after it for 50 ms: the escape key. */
-    if (term_escape_poll(&u->esc, millis()))
+    if (c->state == TELNET_CONN_FREE || c->state == TELNET_CONN_GONE)
     {
-        term_escape(i);
-    }
-    /* A sequence that never finished goes on as it is. */
-    if (u->seq_len > 0 && (uint32_t)(millis() - u->seq_at_ms) >= TELNET_SEQ_WAIT_MS)
-    {
-        seq_flush(u);
-    }
-    while ((n = term_read(i, buf, (int)sizeof buf)) > 0)
-    {
-        /* Bit 7 cleared: the host may send parity (tad_asker.h passes the
-         * bytes raw), and a telnet client takes 255 as IAC. */
-        for (int k = 0; k < n; k++)
-        {
-            buf[k] = (uint8_t)(buf[k] & 0x7Fu);
-        }
-        user_write(u, buf, (size_t)n);
-    }
-
-    term_get_status(i, &ts);
-    if (ts.open)
-    {
-        u->session_seen_open = true;
-    }
-    else if (u->session_seen_open || strcmp(ts.state, "failed") == 0)
-    {
-        /* No [ ] { | } \ in text to a user: a TDV in Norwegian 7-bit shows
-         * them as letters (Ronny, 2026-11-10: "[session" came out as
-         * "Æsession"). The error number only when there is one. */
-        if (ts.error != 0)
-        {
-            user_printf(u, "\r\n<session %s, error %d>\r\n", ts.state, ts.error);
-        }
-        else
-        {
-            user_printf(u, "\r\n<session %s>\r\n", ts.state);
-        }
-        console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): session to %s ended", i,
-                        u->s->user, u->s->system);
-        to_prompt(u);
-    }
-}
-
-/** @brief Pass bytes both ways for one user. */
-static void user_pass(telnet_user *u)
-{
-    uint8_t buf[256];
-    term_status ts;
-    int i = user_index(u);
-    int n;
-
-    if (u->tad ? (tad_in_get_state(i) == TAD_IN_ENDED) : !u->client.connected())
-    {
-        user_drop(u, u->tad ? "the SINTRAN side closed" : "client closed");
         return;
     }
-    if (u->s->closing)
+    if (!c->client.connected())
     {
-        user_drop(u, "logged out");
+        conn_drop(c, "client closed");
         return;
     }
-    if (u->s->ph == PH_LOGIN && auth_login_tick(&u->s->login, millis()))
-    {
-        show_prompt(u);
-    }
-    if (u->tad)
-    {
-        if (tad_in_take_escape(i) && u->s->ph == PH_SESSION)
-        {
-            term_escape(i);
-        }
-        if (u->s->ph == PH_SESSION)
-        {
-            /* Follow the onward host's echo wish even while nothing is typed. */
-            term_get_status(i, &ts);
-            set_echo(u, ts.echo);
-        }
-    }
-    n = u->tad ? 1 : u->client.available();
+    /* In: take telnet commands out, answer them, queue the data. */
+    int room;
+    portENTER_CRITICAL(&c->mux);
+    room = CONN_IN_SIZE - c->in_len;
+    portEXIT_CRITICAL(&c->mux);
+    int avail = c->client.available();
+    int n = (avail < room) ? avail : room;
     if (n > (int)sizeof buf)
     {
         n = (int)sizeof buf;
     }
-    if (n > 0 && u->s->ph == PH_SESSION)
-    {
-        /* Typing waits until the session is running, so no key is lost. */
-        term_get_status(i, &ts);
-        if (!(ts.open && strcmp(ts.state, "running") == 0))
-        {
-            n = 0;
-        }
-    }
     if (n > 0)
     {
-        n = u->tad ? tad_in_read(i, buf, (int)sizeof buf) : u->client.read(buf, (size_t)n);
+        n = c->client.read(buf, (size_t)n);
+        uint8_t data[256];
+        int dn = 0;
         for (int k = 0; k < n; k++)
         {
-            if (!u->tad && user_telnet(u, buf[k]))
+            uint8_t reply[TERM_TELNET_REPLY_MAX];
+            size_t rl = 0;
+            int d = term_telnet_rx(&c->tn, buf[k], reply, &rl);
+            if (rl > 0)
             {
-                continue;
+                (void)c->client.write(reply, rl);
             }
-            s_stats.bytes_from_user++;
-            if (u->s->ph == PH_SESSION)
+            if (d >= 0)
             {
-                session_byte(u, buf[k]);
-            }
-            else
-            {
-                line_byte(u, buf[k]);
+                data[dn++] = (uint8_t)d;
             }
         }
-    }
-    if (u->s->ph == PH_SESSION)
-    {
-        session_pass(u);
-    }
-    if (u->s->listing)
-    {
-        char text[256];
-        bool done = false;
-        int got = route_list_read(i, text, (int)sizeof text, &done);
-        user_write(u, (const uint8_t *)text, (size_t)got);
-        if (done)
+        if (dn > 0)
         {
-            u->s->listing = false;
-            show_prompt(u);
+            s_stats.bytes_from_user += (uint32_t)dn;
+            portENTER_CRITICAL(&c->mux);
+            memcpy(&c->in[c->in_len], data, (size_t)dn);   /* fits: dn <= room */
+            c->in_len += dn;
+            portEXIT_CRITICAL(&c->mux);
         }
     }
-}
-
-/** @brief A new connection: give it a free user, or turn it away. */
-static void accept_user(WiFiClient &incoming)
-{
-    int i = claim_place(PLACE_TELNET);
-    if (i >= 0)
+    /* Out: what the console wrote, 0xFF doubled. */
+    while (true)
     {
-        s_users[i].tad = false;
-        s_users[i].client = incoming;
-        user_start(&s_users[i]);
-        return;
+        uint8_t raw[128];
+        int rn;
+        portENTER_CRITICAL(&c->mux);
+        rn = (c->out_len < (int)sizeof raw) ? c->out_len : (int)sizeof raw;
+        memcpy(raw, c->out, (size_t)rn);
+        portEXIT_CRITICAL(&c->mux);
+        if (rn == 0)
+        {
+            break;
+        }
+        size_t taken = 0;
+        int en = term_telnet_escape(raw, (size_t)rn, buf, sizeof buf, &taken);
+        if (en > 0)
+        {
+            (void)c->client.write(buf, (size_t)en);
+            s_stats.bytes_to_user += (uint32_t)en;
+        }
+        portENTER_CRITICAL(&c->mux);
+        memmove(c->out, &c->out[taken], (size_t)(c->out_len - (int)taken));
+        c->out_len -= (int)taken;
+        portEXIT_CRITICAL(&c->mux);
     }
-    incoming.print("\r\nXMSGGW: all terminal sessions are in use. Try again later.\r\n");
-    incoming.stop();
-    s_stats.refused++;
+    if (c->want_close)
+    {
+        c->client.flush();
+        conn_drop(c, "closed by the console");
+    }
 }
 
 /** @brief Keep the station joined, and the server running while it is. */
@@ -1432,9 +393,9 @@ static void run_wifi(uint32_t now)
         console_out_event(CONTROL_FRAME_EVENT_WIFI_DOWN, "wifi lost");
         for (int i = 0; i < TELNET_TASK_USERS; i++)
         {
-            if (s_users[i].on)
+            if (s_conn[i].state == TELNET_CONN_NEW || s_conn[i].state == TELNET_CONN_OPEN)
             {
-                user_drop(&s_users[i], "wifi lost");
+                conn_drop(&s_conn[i], "wifi lost");
             }
         }
         if (s_server_running)
@@ -1448,46 +409,25 @@ static void run_wifi(uint32_t now)
 void telnet_task_run(void *params)
 {
     (void)params;
-    /* Here, not in setup(): writing the default admin runs PBKDF2 once. */
-    s_users_ready = (users_init() == 0) && s_list != NULL && s_report != NULL;
     while (true)
     {
         uint32_t now = millis();
         run_wifi(now);
-        if (s_server_running)
+        if (s_conn != NULL)
         {
-            WiFiClient incoming = s_server.accept();
-            if (incoming)
+            if (s_server_running)
             {
-                accept_user(incoming);
-            }
-        }
-        for (int i = 0; i < TELNET_TASK_USERS; i++)
-        {
-            if (s_users[i].on)
-            {
-                user_pass(&s_users[i]);
-            }
-            else if (s_place[i] == PLACE_TAD)
-            {
-                /* A SINTRAN caller: start the user once its session runs; free
-                 * the place once the session has ended (before or after). */
-                tad_in_state st = tad_in_get_state(i);
-                if (st == TAD_IN_RUNNING && !s_users[i].tad)
+                WiFiClient incoming = s_server.accept();
+                if (incoming)
                 {
-                    tad_user_start(&s_users[i]);
-                }
-                else if (st == TAD_IN_ENDED || st == TAD_IN_NONE)
-                {
-                    tad_in_release(i);
-                    if (tad_in_get_state(i) == TAD_IN_NONE)
-                    {
-                        s_users[i].tad = false;
-                        free_place(i);
-                    }
+                    conn_accept(incoming);
                 }
             }
+            for (int i = 0; i < TELNET_TASK_USERS; i++)
+            {
+                conn_pass(&s_conn[i]);
+            }
         }
-        vTaskDelay(pdMS_TO_TICKS(5));
+        vTaskDelay(pdMS_TO_TICKS(2));
     }
 }

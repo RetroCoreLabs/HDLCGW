@@ -18,10 +18,9 @@
 #include "libhdlc/esp32s2/spi_tx_task.h"
 
 #include "console_out.h"
-#include "route_list.h"
+#include "gw_console.h"
 #include "names.h"
 #include "settings.h"
-#include "tad_in.h"
 #include "term.h"
 
 /* Longest line frame: address, control, N1 bytes of data, FCS. */
@@ -187,7 +186,7 @@ static void log_write(void *ctx, XmsgLogCategory category, XmsgLogLevel level, c
 static void on_letter(void *ctx, const XmsgDatagram *dg, uint32_t now_ms)
 {
     (void)ctx;
-    tad_in_letter(s_np, dg, now_ms);
+    gw_console_letter(s_np, dg, now_ms);
 }
 
 static void link_state(void *ctx, LapbState state, bool up, bool ready, const char *reason)
@@ -224,17 +223,9 @@ void node_task_init(void)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the terminal sessions");
     }
-    if (route_list_init() != 0)
-    {
-        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for LIST");
-    }
     if (names_init() != 0)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the host's name table");
-    }
-    if (tad_in_init() != 0)
-    {
-        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for incoming terminal sessions");
     }
     hdlc_decoder_reset(&s_dec);
     hdlc_decoder_set_buffer(&s_dec, s_rx_frame, (int)sizeof s_rx_frame);
@@ -272,7 +263,7 @@ void node_task_init(void)
     memset(&cb, 0, sizeof cb);
     cb.link_state = link_state;
     /* Port-0 letters: CONNECT-TO D101 and LI-SYS's status question
-     * (tad_in.h). Routing questions the node answers itself. */
+     * (gw_console.h). Routing questions the node answers itself. */
     cb.on_letter = on_letter;
 
     if (xmsg_node_init(s_np, &cfg, &ports, &cb) != XMSG_OK)
@@ -360,6 +351,10 @@ void node_task_run(void *params)
     uint8_t block[256];
     (void)params;
 
+    /* Here, not in node_task_init(): the first start writes the default
+     * admin, one PBKDF2 run (about 0.5 s), too long for setup(). */
+    (void)gw_console_init();
+
     while (true)
     {
         int n = ring_buffer_read_block(&g_rx_buffer, block, (int)sizeof block);
@@ -403,9 +398,8 @@ void node_task_run(void *params)
                 }
             }
             term_pass(s_np, now);
-            route_list_pass(s_np, now);
             names_pass(s_np, now);
-            tad_in_pass(s_np, now);
+            gw_console_pass(s_np, now);
             (void)xmsg_node_tick(s_np, now);
         }
         update_status();

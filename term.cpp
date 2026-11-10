@@ -186,6 +186,56 @@ int term_open(int slot, const char *system, const char *user)
     return 0;
 }
 
+int term_open_to(int slot, const char *system, uint16_t number, const char *tad_user)
+{
+    term_slot *t = slot_at(slot);
+    size_t n = (system == NULL) ? 0u : strlen(system);
+    if (t == NULL || n == 0 || n >= sizeof t->system || number == 0 || t->open
+        || t->want_connect)
+    {
+        return -1;
+    }
+    t->system_no = number;
+    memcpy(t->system, system, n + 1);
+    t->user[0] = '\0';
+    if (tad_user != NULL)
+    {
+        size_t u = strlen(tad_user);
+        if (u >= sizeof t->user)
+        {
+            u = sizeof t->user - 1u;
+        }
+        memcpy(t->user, tad_user, u);
+        t->user[u] = '\0';
+    }
+    t->want_hangup = false;
+    t->want_escape = false;
+    t->want_connect = true;
+    return 0;
+}
+
+int term_type_one(int slot, const uint8_t *text, int len)
+{
+    term_slot *t = slot_at(slot);
+    int took = 0;
+    if (t == NULL || !t->open || len <= 0)
+    {
+        return 0;
+    }
+    if (!lock())
+    {
+        return 0;
+    }
+    if (t->out_len == 0)
+    {
+        took = (len < TERM_OUT_SIZE) ? len : TERM_OUT_SIZE;
+        memcpy(t->out, text, (size_t)took);
+        t->out_len = took;
+    }
+    xSemaphoreGive(s_lock);
+    return took;
+}
+
 int term_type(int slot, const uint8_t *text, int len)
 {
     term_slot *t = slot_at(slot);

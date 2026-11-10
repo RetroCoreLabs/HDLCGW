@@ -94,7 +94,7 @@ void setup(void)
      * STAT and TASK show what it has used. */
     xTaskCreate(spi_rx_task_run, "SPI rx", 2048, NULL, 24, NULL);
     xTaskCreate(spi_tx_task_run, "SPI tx", 2048, NULL, 8, NULL);
-    xTaskCreate(node_task_run, "Node", 8192, NULL, 4, NULL);
+    xTaskCreate(node_task_run, "Node", 12288, NULL, 4, NULL);   /* + the console (gw_console.h): PBKDF2, the command line */
     xTaskCreate(console_task_run, "Console", 4096, NULL, 2, NULL);
     xTaskCreate(usb_tx_task_run, "USB tx", 2048, NULL, 1, NULL);
     /* WiFi and telnet at the lowest level, as HDLCGW's WiFi task: a slow

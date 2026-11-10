@@ -14,8 +14,8 @@ Each sketch is an ordinary Arduino sketch: open its folder in the Arduino IDE, o
 `arduino-cli compile --fqbn esp32:esp32:lolin_s2_mini .` from inside it (Arduino ESP32 core
 3.3.12).
 
-Both sketches need the **libhdlc** library (the line driver, the HDLC decoder, the USB control
-frames), and XMSGGW also needs **libxmsg** (the XMSG protocol). Today both are separate
-repositories that you install in the Arduino `libraries` folder (a link to each checkout is
-enough). They are to become one library repository, which this repository will then hold at one
-exact version.
+Both sketches need the **libxmsg** library. It holds the XMSG protocol and, under
+`src/libhdlc`, the line driver, the HDLC decoder and the USB control frames. This repository
+holds it at one exact version as the git submodule `src/external/libxmsg`. Fetch it with
+`git submodule update --init`, then make it visible to the Arduino IDE with one link named
+`libxmsg` in the Arduino `libraries` folder that points at `src/external/libxmsg`.

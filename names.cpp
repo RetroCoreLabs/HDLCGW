@@ -17,7 +17,7 @@
 #include <libxmsg/xrout/xrout_names_walk.h>
 
 #include "console_out.h"
-#include "route_list.h"
+#include "gw_console.h"
 
 typedef struct
 {
@@ -133,7 +133,7 @@ static void start(XmsgNode *node, uint32_t now)
     s_new->count = 0;
     s_dropped = 0;
     /* The host's XMSG system number is taken to be its node number, as LIST
-     * does (route_list.cpp). */
+     * does (gw_console.cpp). */
     int rc = xrout_names_walk_start(s_walk, node, (uint16_t)peer, (uint16_t)peer, 10000u, &cb,
                                     now);
     if (rc == XMSG_OK)
@@ -159,7 +159,7 @@ void names_pass(XmsgNode *node, uint32_t now)
         s_walked = false;   /* a new link: read the table again */
     }
     s_was_ready = ready;
-    if (!ready || s_running || route_list_busy())
+    if (!ready || s_running || gw_console_walk_busy())
     {
         return;
     }

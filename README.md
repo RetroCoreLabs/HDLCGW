@@ -30,6 +30,8 @@ Line speed: the line runs at whatever `BAUD` stored, and at 38400 when nothing i
 runs at 307200 (both boards set with `BAUD 307200`, 2026-11-10). Long output from SINTRAN is not
 limited by the line: the same `HELP` listing took 5.8 s through XMSGGW and 7.0 s between D100 and
 D102 with no gateway in the path. SINTRAN sends two 255-byte frames and then waits 200-500 ms.
+A test at 900000 (one `HELP` listing, 2026-11-10) lost no frame and took 4.4 s; the bench went
+back to 307200 afterwards.
 
 Not yet:
 

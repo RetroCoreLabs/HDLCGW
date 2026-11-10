@@ -14,7 +14,7 @@ clock). It has a male DB-25 that plugs straight into the HDLC socket on the back
 | [`src/HDLCGW/`](src/HDLCGW/README.md) | **HDLCGW firmware.** Passes HDLC line frames between the ND machine and a PC, over USB or WiFi/TCP. The PC does the protocol work. |
 | [`src/XMSGGW/`](src/XMSGGW/README.md) | **XMSGGW firmware.** The board becomes an XMSG node of its own (node 101, called D101 on the bench). Telnet users log in to it and reach SINTRAN systems; SINTRAN users reach it with `CONNECT-TO`. |
 | [`kicad/`](kicad/README.md) | **The board drawing** in KiCad 9: the schematic, the S2 Mini symbol and footprint, the wiring with the real ND pin numbers, and what is known and still open ([todo](kicad/todo.md)). There is no PCB layout yet. |
-| [`docs/`](docs/) | Datasheets (ESP32-S2, MAX3483-MAX3491), the [cable measurements](docs/HDLC-Cable-Measurements.md), the [3015 vs MEGALINK 3023](docs/HDLC-3015-vs-MEGALINK-3023.md) comparison, and the wiring drawings for the [PCB](docs/HDLC-PCB-ESP32-Wiring.svg) and the [old breadboard](docs/HDLC-Breadboard-Wiring.svg). |
+| [`docs/`](docs/README.md) | Datasheets (ESP32-S2, MAX3483-MAX3491), the [cable measurements](docs/HDLC-Cable-Measurements.md), the [3015 vs MEGALINK 3023](docs/HDLC-3015-vs-MEGALINK-3023.md) comparison, and the wiring drawings for the [PCB](docs/HDLC-PCB-ESP32-Wiring.svg) and the [old breadboard](docs/HDLC-Breadboard-Wiring.svg). |
 | `src/external/libxmsg/` | The **libxmsg** library as a git submodule held at one exact version. It holds the XMSG protocol and, under `src/libhdlc`, the line driver, the HDLC decoder and the USB control frames. |
 
 Only one firmware runs on the board at a time. Pick HDLCGW to bridge the line to a PC program,

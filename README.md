@@ -1,21 +1,34 @@
 # HDLCGW
 
-One ESP32-S2 board (WEMOS / LOLIN S2 Mini) on the synchronous HDLC line of a Norsk Data machine,
+One small board that connects a Norsk Data machine's synchronous HDLC line to the modern world,
 and the two firmwares that run on it.
 
-| Folder | What is in it |
+The board is a WEMOS / LOLIN S2 Mini (ESP32-S2) with two MAX3490E RS-422 line drivers (data and
+clock). It has a male DB-25 that plugs straight into the HDLC socket on the back of the ND machine
+(the 3015 HDLC card or the 3023 MEGALINK card). The line runs at 307200 bit/s.
+
+## What is in this repository
+
+| Folder | What it is |
 |---|---|
-| `src/HDLCGW/` | **HDLCGW** - passes HDLC line frames between the ND machine and a PC (USB or TCP). See its [README](src/HDLCGW/README.md). |
-| `src/XMSGGW/` | **XMSGGW** - an XMSG node of its own (node 101, D101 on the bench): telnet users log in and reach SINTRAN systems, and SINTRAN users reach it with `CONNECT-TO`. See its [README](src/XMSGGW/README.md). |
-| `kicad/` | the board's schematic (KiCad): the S2 Mini, two MAX3490E line drivers (data and clock), and a DB-25 that plugs into the ND machine. No PCB layout yet. |
-| `docs/` | the ESP32-S2 datasheets, the board wiring and the cable measurements. |
+| [`src/HDLCGW/`](src/HDLCGW/README.md) | **HDLCGW firmware.** Passes HDLC line frames between the ND machine and a PC, over USB or WiFi/TCP. The PC does the protocol work. |
+| [`src/XMSGGW/`](src/XMSGGW/README.md) | **XMSGGW firmware.** The board becomes an XMSG node of its own (node 101, called D101 on the bench). Telnet users log in to it and reach SINTRAN systems; SINTRAN users reach it with `CONNECT-TO`. |
+| [`kicad/`](kicad/README.md) | **The board drawing** in KiCad 9: the schematic, the S2 Mini symbol and footprint, the wiring with the real ND pin numbers, and what is known and still open ([todo](kicad/todo.md)). There is no PCB layout yet. |
+| [`docs/`](docs/) | Datasheets (ESP32-S2, MAX3483-MAX3491), the [cable measurements](docs/HDLC-Cable-Measurements.md), the [3015 vs MEGALINK 3023](docs/HDLC-3015-vs-MEGALINK-3023.md) comparison, and the wiring drawings for the [PCB](docs/HDLC-PCB-ESP32-Wiring.svg) and the [old breadboard](docs/HDLC-Breadboard-Wiring.svg). |
+| `src/external/libxmsg/` | The **libxmsg** library as a git submodule held at one exact version. It holds the XMSG protocol and, under `src/libhdlc`, the line driver, the HDLC decoder and the USB control frames. |
 
-Each sketch is an ordinary Arduino sketch: open its folder in the Arduino IDE, or build it with
-`arduino-cli compile --fqbn esp32:esp32:lolin_s2_mini .` from inside it (Arduino ESP32 core
-3.3.12).
+Only one firmware runs on the board at a time. Pick HDLCGW to bridge the line to a PC program,
+or XMSGGW to let the board be an XMSG node by itself.
 
-Both sketches need the **libxmsg** library. It holds the XMSG protocol and, under
-`src/libhdlc`, the line driver, the HDLC decoder and the USB control frames. This repository
-holds it at one exact version as the git submodule `src/external/libxmsg`. Fetch it with
-`git submodule update --init`, then make it visible to the Arduino IDE with one link named
-`libxmsg` in the Arduino `libraries` folder that points at `src/external/libxmsg`.
+## Building
+
+1. Clone with the library: `git clone --recurse-submodules https://github.com/RetroCoreLabs/HDLCGW.git`
+   (or `git submodule update --init` in an existing clone).
+2. Make the library visible to Arduino: one link named `libxmsg` in your Arduino `libraries`
+   folder, pointing at `src/external/libxmsg`. On Windows:
+   `mklink /J libxmsg <clone>\src\external\libxmsg` run inside that folder.
+3. Install the Arduino ESP32 core 3.3.12.
+4. Open the sketch folder in the Arduino IDE, or from inside it:
+   `arduino-cli compile --fqbn esp32:esp32:lolin_s2_mini .`
+
+Each firmware's README explains how to flash it, its commands and how it was tested.

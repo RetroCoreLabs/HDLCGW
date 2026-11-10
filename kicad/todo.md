@@ -4,7 +4,7 @@
 `HDLC-ESP32-S2/db25-footprint-check.pdf` (8 stock variants, printed 1:1) and say which page fits, or
 say none fits. Then the plug (J1) gets its footprint and 3D model.
 
-Everything we know so far is in `NOTES.md` in this folder. Only open work is listed here.
+Everything we know so far is in [README.md](README.md) in this folder. Only open work is listed here.
 
 ## Must be decided or checked before a PCB is laid out
 

@@ -241,10 +241,13 @@ static void nwalk_done(void *ctx, int result, unsigned rows)
 }
 
 /** @brief NAMES [system]: `system` 0 is plain NAMES, the host we are linked to;
- *         otherwise the number the console resolved (as CONNECT does). The question
- *         always goes to our link neighbour; the system number tells XROUT whose name
- *         table to read. Whether a SINTRAN XROUT answers for a system that is not the
- *         neighbour itself is NOT verified (to be tested live with NAMES 102). */
+ *         otherwise the number the console resolved (as CONNECT does). The asked
+ *         system's number goes in BOTH places: the SINTRAN header's destination node and
+ *         the XROUT system field. The neighbour then relays the question on, and the
+ *         replies come back from that system. This is what SINTRAN's own XMSG-COMMAND
+ *         LIST-NAMES does: captured 2026-11-10, D102 asking D101 through D100 (header
+ *         dst 0x0065, sub-header system 0x0065). Addressing the header to the neighbour
+ *         with the far system only in the sub-header made D100 refuse with XEIMA. */
 static int svc_names(void *ctx, int place, uint16_t system)
 {
     (void)ctx;
@@ -260,7 +263,7 @@ static int svc_names(void *ctx, int place, uint16_t system)
     uint16_t target = (system != 0u) ? system : (uint16_t)peer;
     XroutNamesWalkCallbacks cb = { NULL, nwalk_row, nwalk_done };
     s_nwalk_place = place;
-    int rc = xrout_names_walk_start(s_nwalk, s_node, (uint16_t)peer, target, 10000u, &cb,
+    int rc = xrout_names_walk_start(s_nwalk, s_node, target, target, 10000u, &cb,
                                     s_now);
     if (rc != XMSG_OK)
     {

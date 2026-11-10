@@ -557,7 +557,7 @@ static void handle_term(const char *args)
         {
             console_out_println("Usage: TERM CONNECT <system>, for example TERM CONNECT D100");
         }
-        else if (term_open(TERM_CONSOLE_SLOT, sys) != 0)
+        else if (term_open(TERM_CONSOLE_SLOT, sys, NULL) != 0)
         {
             console_out_println("Not started: a session is open, or the name is too long.");
         }

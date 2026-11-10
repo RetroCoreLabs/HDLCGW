@@ -6,6 +6,7 @@
 ***************************************************************************/
 #include "term.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include <Arduino.h>
@@ -24,6 +25,7 @@ typedef struct
     bool open;                        /* initialised and attached, until CLOSED/FAILED */
     bool used;                        /* tad has been initialised at least once */
     char system[16];
+    char user[TAD_IAM_USER_SIZE];     /* "" = libxmsg's default name */
     volatile bool want_connect;
     volatile bool want_hangup;
     volatile bool want_escape;
@@ -112,7 +114,7 @@ static void cb_logged_out(void *ctx)
 
 /* --------------------------------------------------------- other tasks */
 
-int term_open(int slot, const char *system)
+int term_open(int slot, const char *system, const char *user)
 {
     term_slot *t = slot_at(slot);
     size_t n = strlen(system);
@@ -121,6 +123,24 @@ int term_open(int slot, const char *system)
         return -1;
     }
     memcpy(t->system, system, n + 1);
+    t->user[0] = '\0';
+    if (user != NULL && user[0] != '\0')
+    {
+        size_t u = strlen(user);
+        if (u + sizeof "@xmsggw" <= sizeof t->user)
+        {
+            (void)snprintf(t->user, sizeof t->user, "%s@xmsggw", user);
+        }
+        else
+        {
+            if (u >= sizeof t->user)
+            {
+                u = sizeof t->user - 1u;
+            }
+            memcpy(t->user, user, u);
+            t->user[u] = '\0';
+        }
+    }
     t->want_hangup = false;
     t->want_escape = false;
     t->want_connect = true;
@@ -235,6 +255,10 @@ static void slot_connect(term_slot *t, XmsgNode *node, uint32_t now)
     uint16_t ttyp = settings_ttyp();
     cfg.ttyp[0] = (uint8_t)(ttyp >> 8u);
     cfg.ttyp[1] = (uint8_t)(ttyp & 0xFFu);
+    if (t->user[0] != '\0')
+    {
+        cfg.user_name = t->user;   /* copied by tad_asker_init */
+    }
     memset(&cb, 0, sizeof cb);
     cb.ctx = t;
     cb.text_out = cb_text;

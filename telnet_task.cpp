@@ -30,6 +30,7 @@
 #include "node_task.h"
 #include "settings.h"
 #include "term.h"
+#include "route_list.h"
 #include "users.h"
 
 #define WIFI_RETRY_MS 20000u
@@ -90,6 +91,7 @@ typedef struct
     AuthUser setpw;           /* PH_SETPW: the record being made (hash only) */
     bool setpw_again;         /* PH_SETPW: the first entry is in, the second is due */
     bool closing;             /* close once the text is out */
+    bool listing;             /* LIST running: its text comes, then the prompt */
     char system[16];          /* PH_SESSION: the system asked for */
     char remote[24];          /* "IP:port" */
     uint32_t connected_ms;
@@ -190,6 +192,10 @@ static void user_drop(telnet_user *u, const char *why)
     u->on = false;
     s_stats.users_on--;
     /* The login dialogue and the line may hold password hashes or typing. */
+    if (u->s->listing)
+    {
+        route_list_cancel(i);
+    }
     auth_wipe(u->s, sizeof *u->s);
     console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d gone: %s", i, why);
 }
@@ -290,7 +296,7 @@ static void cmd_help(telnet_user *u)
     if (u->s->level == AUTH_LEVEL_ADMIN)
     {
         user_say(u, "USERS              the users (admin)\r\n"
-                    "ADDUSER name [admin]  add a user (admin)\r\n"
+                    "ADDUSER name <admin>  add a user (admin)\r\n"
                     "DELUSER name       delete a user (admin)\r\n"
                     "RESETPW name       set a new password, changed at login (admin)\r\n");
     }
@@ -369,7 +375,7 @@ static void cmd_connect(telnet_user *u, const char *system)
         show_prompt(u);
         return;
     }
-    if (term_open(i, system) != 0)
+    if (term_open(i, system, u->s->user) != 0)
     {
         user_say(u, "this terminal session is still closing; try again\r\n");
         show_prompt(u);
@@ -579,9 +585,14 @@ static void prompt_line(telnet_user *u, const char *text)
         cmd_connect(u, arg);   /* no prompt after it: the host's banner comes */
         return;
     case TERM_CMD_LIST:
-        /* TODO(ronny): LIST must ask the host for the systems it reaches; libxmsg
-         * has no code for that yet (its own bridge says the same). */
-        user_say(u, "LIST: not implemented yet\r\n");
+        /* Asks the host for its whole routing table (route_list.h); the
+         * prompt comes back when the list has ended. */
+        if (route_list_start(user_index(u)) == 0)
+        {
+            u->s->listing = true;
+            return;
+        }
+        user_say(u, "LIST: another user's LIST is running; try again\r\n");
         break;
     case TERM_CMD_WHO:
         cmd_who(u);
@@ -717,7 +728,7 @@ static void line_byte(telnet_user *u, uint8_t k)
     uint8_t echo[3];
     size_t el = 0;
     uint32_t now = millis();
-    if (s->closing || (s->ph == PH_LOGIN && s->login.state == AUTH_LOGIN_WAIT))
+    if (s->closing || s->listing || (s->ph == PH_LOGIN && s->login.state == AUTH_LOGIN_WAIT))
     {
         return; /* typed while a failed login waits: thrown away */
     }
@@ -905,7 +916,17 @@ static void session_pass(telnet_user *u)
     }
     else if (u->session_seen_open || strcmp(ts.state, "failed") == 0)
     {
-        user_printf(u, "\r\n[session %s, error %d]\r\n", ts.state, ts.error);
+        /* No [ ] { | } \ in text to a user: a TDV in Norwegian 7-bit shows
+         * them as letters (Ronny, 2026-11-10: "[session" came out as
+         * "Æsession"). The error number only when there is one. */
+        if (ts.error != 0)
+        {
+            user_printf(u, "\r\n<session %s, error %d>\r\n", ts.state, ts.error);
+        }
+        else
+        {
+            user_printf(u, "\r\n<session %s>\r\n", ts.state);
+        }
         console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d (%s): session to %s ended", i,
                         u->s->user, u->s->system);
         to_prompt(u);
@@ -971,6 +992,18 @@ static void user_pass(telnet_user *u)
     if (u->s->ph == PH_SESSION)
     {
         session_pass(u);
+    }
+    if (u->s->listing)
+    {
+        char text[256];
+        bool done = false;
+        int got = route_list_read(i, text, (int)sizeof text, &done);
+        user_write(u, (const uint8_t *)text, (size_t)got);
+        if (done)
+        {
+            u->s->listing = false;
+            show_prompt(u);
+        }
     }
 }
 

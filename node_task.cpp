@@ -18,6 +18,7 @@
 #include "libhdlc/esp32s2/spi_tx_task.h"
 
 #include "console_out.h"
+#include "route_list.h"
 #include "settings.h"
 #include "term.h"
 
@@ -214,6 +215,10 @@ void node_task_init(void)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the terminal sessions");
     }
+    if (route_list_init() != 0)
+    {
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for LIST");
+    }
     hdlc_decoder_reset(&s_dec);
     hdlc_decoder_set_buffer(&s_dec, s_rx_frame, (int)sizeof s_rx_frame);
 
@@ -378,6 +383,7 @@ void node_task_run(void *params)
                 }
             }
             term_pass(s_np, now);
+            route_list_pass(s_np, now);
             (void)xmsg_node_tick(s_np, now);
         }
         update_status();

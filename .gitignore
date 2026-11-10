@@ -1,1 +1,6 @@
-docs/
+# Doxygen output (OUTPUT_DIRECTORY = docs, next to the Doxyfile)
+src/HDLCGW/docs/
+# KiCad keeps automatic backups beside the project
+kicad/**/*-backups/
+# Hand-made archives of the sketch
+Backup-*.zip

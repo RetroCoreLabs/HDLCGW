@@ -249,7 +249,7 @@ byte stuffing instead, which is how PPP frames travel over an ordinary serial po
   tool, two-board tests, how to read `STAT`, and every measured result.
 - [BUGS.md](BUGS.md) - open and closed defects, with causes and evidence.
 - `Doxyfile` - `doxygen Doxyfile` writes the source documentation to `docs/html/`.
-- `Doc/` - the ESP32-S2 datasheet.
+- `docs/` at the repository root - the ESP32-S2 datasheet.
 
 ## Origins
 

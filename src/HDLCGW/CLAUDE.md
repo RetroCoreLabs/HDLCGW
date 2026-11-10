@@ -295,7 +295,7 @@ spi_tx 8, console 2, usb_tx 1, WiFi 1.
   Check after a build that it really took the FreeRTOS lock: ESP-IDF also has pthread, so a
   wrong platform guess would still build. `lock_take` must call `xQueueSemaphoreTake`
   (objdump of the .elf, checked 2026-11-09).
-- `Doc/` holds the ESP32-S2 datasheet PDF; that is the authority for peripheral behaviour,
+- `docs/` at the repository root holds the ESP32-S2 datasheet PDF; that is the authority for peripheral behaviour,
   not memory of other ESP32 variants.
 
 ## Things to know before changing code
@@ -329,5 +329,5 @@ spi_tx 8, console 2, usb_tx 1, WiFi 1.
   only counted. RC422Dev behaves the same way.
 - The USB CDC receive queue (the core's, 8192 bytes in `setup()`) is only used when
   `USB_RX_DIRECT` is 0; the default build reads TinyUSB directly (see usb_rx above).
-- `Doc/` also holds nothing from the tool repository; the host-side test tool lives in
+- `docs/` also holds nothing from the tool repository; the host-side test tool lives in
   `HdlcGatewayTest` (RetroCoreLabs on GitHub) and is C#. Do not add host test programs here.

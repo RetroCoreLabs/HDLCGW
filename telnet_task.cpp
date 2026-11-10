@@ -484,7 +484,7 @@ static void setpw_line(telnet_user *u, const char *text)
         if (s->setpw.iterations == 0u)
         {
             AuthLevel level = s->setpw.level;
-            rc = auth_user_make(&rec, s->setpw.name, text, AUTH_DEFAULT_ITERATIONS,
+            rc = auth_user_make(&rec, s->setpw.name, text, USERS_ITERATIONS,
                                 users_random());
             rec.level = level;
             if (rc == 0)
@@ -666,6 +666,29 @@ static void login_line(telnet_user *u, const char *text, uint32_t now)
         console_out_log(CONTROL_FRAME_LOG_INFO, "Telnet user %d: logged in as %s (%s)%s", i,
                         s->user, (s->level == AUTH_LEVEL_ADMIN) ? "admin" : "user",
                         (note == AUTH_NOTE_CHANGED) ? ", new password stored" : "");
+        /* A record stored with another round count (the 100000 of the first
+         * build) is stored again at USERS_ITERATIONS, from the password just
+         * typed: a password change keeps the record's own count (libxmsg
+         * auth_user.c), so it would otherwise never move. */
+        if (before == AUTH_LOGIN_PASSWORD)
+        {
+            AuthUser rec;
+            if (users_lookup(s->user, &rec) == 0 && rec.iterations != USERS_ITERATIONS)
+            {
+                AuthUser fresh;
+                if (auth_user_make(&fresh, rec.name, text, USERS_ITERATIONS, users_random()) == 0)
+                {
+                    fresh.level = rec.level;
+                    fresh.must_change = rec.must_change;
+                    console_out_log(CONTROL_FRAME_LOG_INFO,
+                                    "Telnet user %d: %s re-stored at %u rounds (was %lu): %s", i,
+                                    s->user, USERS_ITERATIONS, (unsigned long)rec.iterations,
+                                    (users_put(&fresh) == 0) ? "ok" : "write failed");
+                }
+                auth_wipe(&fresh, sizeof fresh);
+            }
+            auth_wipe(&rec, sizeof rec);
+        }
         user_say(u, "Logged in. HELP lists the commands.\r\n");
         to_prompt(u);
         break;

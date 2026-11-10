@@ -21,6 +21,12 @@
 #include <libxmsg/auth/auth_login.h>
 #include <libxmsg/auth/auth_user.h>
 
+/** PBKDF2 rounds for every record XMSGGW writes. libxmsg's default (100000)
+ *  took 22810 ms per check on this ESP32-S2 (measured 2026-11-09) and stops
+ *  every other telnet user meanwhile; Ronny chose 2000 (about 0.46 s by the
+ *  same measurement), accepting a list about 50 times easier to crack. */
+#define USERS_ITERATIONS 2000u
+
 /** Most users kept. 16 lines of at most AUTH_LINE_MAX fit one NVS string (< 4000 bytes). */
 #define USERS_MAX 16
 

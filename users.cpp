@@ -229,7 +229,7 @@ int users_init(void)
         console_out_log(CONTROL_FRAME_LOG_INFO, "Users: %d stored", n);
         return 0;
     }
-    if (auth_user_make_default_admin(&admin, AUTH_DEFAULT_ITERATIONS, &s_rng) != 0
+    if (auth_user_make_default_admin(&admin, USERS_ITERATIONS, &s_rng) != 0
         || users_write(&admin, 1) != 0)
     {
         auth_wipe(&admin, sizeof admin);

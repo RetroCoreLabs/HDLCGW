@@ -21,6 +21,7 @@
 #include <libxmsg/auth/auth_user.h>
 
 #include "console_out.h"
+#include "file_fetch.h"
 #include "names.h"
 #include "node_task.h"
 #include "settings.h"
@@ -53,12 +54,35 @@ typedef struct
     char user[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
 } place;
 
-/** What the data connection is waiting to do. */
+/** How the next data connection is made. */
+typedef enum
+{
+    MODE_NONE = 0,   /**< neither PASV/EPSV nor PORT/EPRT since the last transfer */
+    MODE_PASSIVE,    /**< the client connects to FTP_SERVER_DATA_PORT */
+    MODE_ACTIVE      /**< we connect to the address PORT/EPRT gave */
+} data_mode;
+
+/** What the data connection is doing. */
 typedef enum
 {
     DATA_IDLE = 0,
-    DATA_WAIT_CLIENT  /**< a listing is ready; waiting for the client to connect */
+    DATA_WAIT_CLIENT, /**< a transfer is ready; waiting for the data connection */
+    DATA_SENDING      /**< connected; sending */
 } data_state;
+
+/** What is sent on it. */
+typedef enum
+{
+    XFER_LISTING = 0, /**< s_listing */
+    XFER_FILE         /**< a SINTRAN file, as file_fetch.h brings it in */
+} xfer_kind;
+
+/** Bytes handed to the socket per pass while sending a file. */
+#define FILE_CHUNK 1024u
+
+/** How long we wait to connect to an active-mode client. The telnet task waits with it
+ *  (Ronny accepted that, 2026-11-11, when choosing to have active mode). */
+#define ACTIVE_CONNECT_MS 3000
 
 static WiFiServer s_ctrl_server(FTP_SERVER_PORT, 1);
 static WiFiServer s_data_server(FTP_SERVER_DATA_PORT, 1);
@@ -74,12 +98,19 @@ static size_t s_line_len = 0;
 static bool s_line_too_long = false;
 static uint32_t s_last_ms = 0;
 static place s_cwd;
-static bool s_passive = false;        /* PASV or EPSV given since the last transfer */
+static data_mode s_mode = MODE_NONE;
+static IPAddress s_active_ip;         /* MODE_ACTIVE: where to connect */
+static uint16_t s_active_port = 0;
 static data_state s_data = DATA_IDLE;
+static xfer_kind s_xfer = XFER_LISTING;
+static WiFiClient s_dconn;            /* the data connection while DATA_SENDING */
 static uint32_t s_data_deadline = 0;
 static size_t s_listing_len = 0;
+static uint32_t s_file_sent = 0;      /* XFER_FILE: bytes written to the data connection */
+static char s_file_name[80];          /* XFER_FILE: "CHATLG2:SYMB", for the log and replies */
 
 static char *s_listing = NULL;        /* LISTING_SIZE, PSRAM */
+static uint8_t *s_chunk = NULL;       /* FILE_CHUNK, PSRAM: keeps the telnet task's stack small */
 static NamesEntry *s_names = NULL;    /* NAMES_MAX, PSRAM */
 static ftp_server_stats s_stats;
 
@@ -93,7 +124,11 @@ int ftp_server_init(void)
     {
         s_names = (NamesEntry *)heap_caps_calloc(NAMES_MAX, sizeof(NamesEntry), MALLOC_CAP_SPIRAM);
     }
-    return (s_listing != NULL && s_names != NULL) ? 0 : -1;
+    if (s_chunk == NULL)
+    {
+        s_chunk = (uint8_t *)heap_caps_malloc(FILE_CHUNK, MALLOC_CAP_SPIRAM);
+    }
+    return (s_listing != NULL && s_names != NULL && s_chunk != NULL && file_fetch_init() == 0) ? 0 : -1;
 }
 
 void ftp_server_get_stats(ftp_server_stats *out)
@@ -148,6 +183,23 @@ static void data_flush(void)
     }
 }
 
+/** @brief End any transfer: close the data connection, let go of a file, forget the mode. */
+static void data_end(void)
+{
+    if (s_data == DATA_SENDING)
+    {
+        s_dconn.stop();
+    }
+    if (s_xfer == XFER_FILE && s_data != DATA_IDLE)
+    {
+        file_fetch_release();
+    }
+    s_data = DATA_IDLE;
+    s_mode = MODE_NONE;
+    s_file_sent = 0;
+    data_flush();
+}
+
 /** @brief End the session: close both connections, forget the login. */
 static void session_end(const char *why)
 {
@@ -162,9 +214,7 @@ static void session_end(const char *why)
     memset(s_user_name, 0, sizeof s_user_name);
     s_line_len = 0;
     s_line_too_long = false;
-    s_passive = false;
-    s_data = DATA_IDLE;
-    data_flush();
+    data_end();
     memset(&s_cwd, 0, sizeof s_cwd);
 }
 
@@ -385,7 +435,26 @@ static int listing_build(const place *p, bool names_only, const char **why)
     return -1;
 }
 
-/** @brief LIST / NLST: build the listing, then wait for the client's data connection. */
+/**
+ * @brief Begin a transfer: tell the client, then wait for (or make) the data connection.
+ * @return false when no data connection was set up (no PASV/EPSV/PORT/EPRT).
+ */
+static bool transfer_begin(xfer_kind kind, const char *what)
+{
+    if (s_mode == MODE_NONE)
+    {
+        reply("425 Use PASV, EPSV, PORT or EPRT first.");
+        return false;
+    }
+    s_xfer = kind;
+    s_file_sent = 0;
+    replyf("150 Opening the data connection for %s.", what);
+    s_data = DATA_WAIT_CLIENT;
+    s_data_deadline = millis() + FTP_SERVER_DATA_WAIT_MS;
+    return true;
+}
+
+/** @brief LIST / NLST: build the listing, then send it on the data connection. */
 static void cmd_list(const char *args, bool names_only)
 {
     place p = s_cwd;
@@ -401,55 +470,231 @@ static void cmd_list(const char *args, bool names_only)
             args++;
         }
     }
-    if (!s_passive)
-    {
-        reply("425 Use PASV or EPSV first (active mode, PORT, is not supported).");
-        return;
-    }
     if ((*args != '\0' && resolve(args, &p, &why) != 0) || listing_build(&p, names_only, &why) != 0)
     {
-        s_passive = false;
-        data_flush();
+        data_end();
         reply(why);
         return;
     }
-    reply("150 Here comes the listing.");
-    s_data = DATA_WAIT_CLIENT;
-    s_data_deadline = millis() + FTP_SERVER_DATA_WAIT_MS;
+    (void)transfer_begin(XFER_LISTING, "the listing");
 }
 
-/** @brief The data connection: once the client has connected, send the listing. */
-static void data_pass(uint32_t now)
+/**
+ * @brief RETR: fetch a SINTRAN file and send it. The FTP name NAME.TYPE is SINTRAN's
+ *        NAME:TYPE (Ronny, 2026-11-11: Windows does not allow ':' in a file name).
+ *        The bytes go out as SINTRAN holds them: no line-ending or character change in
+ *        either TYPE A or TYPE I.
+ */
+static void cmd_retr(const char *args)
 {
-    if (s_data != DATA_WAIT_CLIENT)
+    char dir[LINE_MAX_CHARS + 1];
+    char user[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
+    char password[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
+    place p;
+    const char *why = NULL;
+    const char *slash = strrchr(args, '/');
+    const char *file = (slash != NULL) ? slash + 1 : args;
+    size_t dir_len = (slash != NULL) ? (size_t)(slash - args) : 0u;
+
+    if (*file == '\0' || dir_len >= sizeof dir)
     {
+        data_end();
+        reply("501 Give a file name.");
         return;
     }
-    WiFiClient c = s_data_server.accept();
-    if (c)
+    if (slash == NULL)
     {
-        size_t sent = (s_listing_len > 0u) ? c.write((const uint8_t *)s_listing, s_listing_len) : 0u;
-        c.stop();
-        s_data = DATA_IDLE;
-        s_passive = false;
-        s_stats.listings++;
-        if (sent == s_listing_len)
+        p = s_cwd;   /* a bare file name: in the current folder */
+    }
+    else
+    {
+        memcpy(dir, args, dir_len);
+        dir[dir_len] = '\0';
+        if (slash == args)
         {
-            reply("226 Listing sent.");
+            (void)snprintf(dir, sizeof dir, "/");
+        }
+        if (resolve(dir, &p, &why) != 0)
+        {
+            data_end();
+            reply(why);
+            return;
+        }
+    }
+    if (p.lv != LEVEL_USER)
+    {
+        data_end();
+        reply("550 Files are inside /<machine>/<SINTRAN user>.");
+        return;
+    }
+    /* NAME.TYPE -> NAME:TYPE at the last dot; a name already holding ':' is kept. */
+    (void)snprintf(s_file_name, sizeof s_file_name, "%s", file);
+    if (strchr(s_file_name, ':') == NULL)
+    {
+        char *dot = strrchr(s_file_name, '.');
+        if (dot != NULL)
+        {
+            *dot = ':';
+        }
+    }
+    if (sintran_account_get(s_user_name, user, password) != 0
+        || file_fetch_start(p.system, user, password, s_file_name) != 0)
+    {
+        memset(password, 0, sizeof password);
+        data_end();
+        reply("450 The gateway cannot start a file transfer now; try again.");
+        return;
+    }
+    memset(password, 0, sizeof password);
+    if (!transfer_begin(XFER_FILE, file))
+    {
+        file_fetch_release();
+    }
+}
+
+/** @brief Write the next file bytes; end the transfer when the file is all sent or failed. */
+static void file_send(void)
+{
+    file_fetch_status st;
+    file_fetch_get(&st);
+    if (s_file_sent < st.have)
+    {
+        size_t n = file_fetch_copy(s_file_sent, s_chunk, FILE_CHUNK);
+        size_t w = (n > 0u) ? s_dconn.write(s_chunk, n) : 0u;
+        s_file_sent += (uint32_t)w;
+        if (n > 0u && w == 0u && !s_dconn.connected())
+        {
+            data_end();
+            reply("426 The data connection broke during the transfer.");
+        }
+        return;
+    }
+    if (st.state == FILE_FETCH_DONE)
+    {
+        console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: %s sent, %lu bytes", s_file_name,
+                        (unsigned long)s_file_sent);
+        data_end();
+        s_stats.files++;
+        reply("226 File sent.");
+    }
+    else if (st.state == FILE_FETCH_FAILED)
+    {
+        char why[96];
+        file_fetch_reason(&st, why, sizeof why);
+        data_end();
+        replyf("550 %s: %s.", s_file_name, why);
+    }
+}
+
+/** @brief Make the active-mode connection. The telnet task waits up to ACTIVE_CONNECT_MS. */
+static bool active_connect(void)
+{
+    WiFiClient c;
+    if (c.connect(s_active_ip, s_active_port, ACTIVE_CONNECT_MS) == 0)
+    {
+        return false;
+    }
+    s_dconn = c;
+    return true;
+}
+
+/** @brief The data connection: get it, then send the listing or the file. */
+static void data_pass(uint32_t now)
+{
+    if (s_data == DATA_WAIT_CLIENT)
+    {
+        bool up = false;
+        if (s_mode == MODE_PASSIVE)
+        {
+            WiFiClient c = s_data_server.accept();
+            if (c)
+            {
+                s_dconn = c;
+                up = true;
+            }
+        }
+        else if (!active_connect())
+        {
+            data_end();
+            reply("425 Could not connect to the address PORT/EPRT gave.");
+            return;
         }
         else
         {
-            reply("426 The data connection broke during the listing.");
+            up = true;
         }
+        if (up)
+        {
+            s_dconn.setNoDelay(true);
+            s_data = DATA_SENDING;
+        }
+        else if ((int32_t)(now - s_data_deadline) >= 0)
+        {
+            data_end();
+            reply("425 The data connection was not opened in time.");
+            return;
+        }
+    }
+    if (s_data != DATA_SENDING)
+    {
         return;
     }
-    if ((int32_t)(now - s_data_deadline) >= 0)
+    if (s_xfer == XFER_FILE)
     {
-        s_data = DATA_IDLE;
-        s_passive = false;
-        data_flush();
-        reply("425 The data connection was not opened in time.");
+        file_send();
+        return;
     }
+    size_t sent = (s_listing_len > 0u) ? s_dconn.write((const uint8_t *)s_listing, s_listing_len) : 0u;
+    data_end();
+    s_stats.listings++;
+    reply((sent == s_listing_len) ? "226 Listing sent." : "426 The data connection broke during the listing.");
+}
+
+/**
+ * @brief PORT h1,h2,h3,h4,p1,p2 (RFC 959) and EPRT |1|address|port| (RFC 2428).
+ *        Only the address the client itself came from is accepted: anything else
+ *        would let a client make the gateway connect to a third machine ("FTP bounce").
+ */
+static void cmd_port(const char *args, bool extended)
+{
+    unsigned h1 = 0;
+    unsigned h2 = 0;
+    unsigned h3 = 0;
+    unsigned h4 = 0;
+    unsigned port = 0;
+    bool ok;
+    if (extended)
+    {
+        unsigned proto = 0;
+        char d = args[0];
+        char fmt[40];
+        (void)snprintf(fmt, sizeof fmt, "%c%%u%c%%u.%%u.%%u.%%u%c%%u%c", d, d, d, d);
+        ok = (d != '\0') && sscanf(args, fmt, &proto, &h1, &h2, &h3, &h4, &port) == 6 && proto == 1u;
+    }
+    else
+    {
+        unsigned p1 = 0;
+        unsigned p2 = 0;
+        ok = sscanf(args, "%u,%u,%u,%u,%u,%u", &h1, &h2, &h3, &h4, &p1, &p2) == 6 && p1 < 256u
+             && p2 < 256u;
+        port = (p1 << 8u) | p2;
+    }
+    if (!ok || h1 > 255u || h2 > 255u || h3 > 255u || h4 > 255u || port == 0u || port > 65535u)
+    {
+        reply(extended ? "522 Only IPv4 (protocol 1) in EPRT." : "501 Bad PORT address.");
+        return;
+    }
+    IPAddress ip((uint8_t)h1, (uint8_t)h2, (uint8_t)h3, (uint8_t)h4);
+    if (ip != s_ctrl.remoteIP())
+    {
+        reply("504 The data address must be the client's own address.");
+        return;
+    }
+    data_flush();
+    s_mode = MODE_ACTIVE;
+    s_active_ip = ip;
+    s_active_port = (uint16_t)port;
+    reply("200 Active mode set.");
 }
 
 /** @brief USER and PASS. */
@@ -603,7 +848,7 @@ static void command(const char *line)
     {
         IPAddress ip = WiFi.localIP();
         data_flush();
-        s_passive = true;
+        s_mode = MODE_PASSIVE;
         replyf("227 Entering Passive Mode (%u,%u,%u,%u,%u,%u).", (unsigned)ip[0], (unsigned)ip[1],
                (unsigned)ip[2], (unsigned)ip[3], (unsigned)(FTP_SERVER_DATA_PORT >> 8u),
                (unsigned)(FTP_SERVER_DATA_PORT & 0xFFu));
@@ -612,13 +857,23 @@ static void command(const char *line)
     if (is_cmd(line, "EPSV", &a))
     {
         data_flush();
-        s_passive = true;
+        s_mode = MODE_PASSIVE;
         replyf("229 Entering Extended Passive Mode (|||%u|).", (unsigned)FTP_SERVER_DATA_PORT);
         return;
     }
-    if (is_cmd(line, "PORT", &a) || is_cmd(line, "EPRT", &a))
+    if (is_cmd(line, "PORT", &a))
     {
-        reply("502 Active mode is not supported; use passive mode.");
+        cmd_port(a, false);
+        return;
+    }
+    if (is_cmd(line, "EPRT", &a))
+    {
+        cmd_port(a, true);
+        return;
+    }
+    if (is_cmd(line, "RETR", &a))
+    {
+        cmd_retr(a);
         return;
     }
     if (is_cmd(line, "LIST", &a))
@@ -631,11 +886,18 @@ static void command(const char *line)
         cmd_list(a, true);
         return;
     }
-    if (is_cmd(line, "RETR", &a) || is_cmd(line, "STOR", &a) || is_cmd(line, "SIZE", &a)
-        || is_cmd(line, "MDTM", &a) || is_cmd(line, "DELE", &a) || is_cmd(line, "RNFR", &a)
+    if (is_cmd(line, "SIZE", &a) || is_cmd(line, "MDTM", &a))
+    {
+        /* A file's size and date need FILE-STATISTICS, which libcosmos does not have yet.
+         * 502 (not implemented), not 550: curl reads 550 on SIZE as "the file does not
+         * exist" and never sends RETR (seen 2026-11-11). */
+        reply("502 File size and date are not built yet.");
+        return;
+    }
+    if (is_cmd(line, "STOR", &a) || is_cmd(line, "DELE", &a) || is_cmd(line, "RNFR", &a)
         || is_cmd(line, "RNTO", &a) || is_cmd(line, "APPE", &a))
     {
-        reply("550 SINTRAN files are not built yet (needs the COSMOS file client).");
+        reply("550 Writing, deleting and renaming SINTRAN files are not built yet.");
         return;
     }
     if (is_cmd(line, "MKD", &a) || is_cmd(line, "XMKD", &a) || is_cmd(line, "RMD", &a)
@@ -674,16 +936,20 @@ static void ctrl_pass(uint32_t now)
             {
                 reply("500 Line too long.");
             }
-            else if (s_data == DATA_WAIT_CLIENT && strncasecmp(s_line, "ABOR", 4) != 0)
+            else if (s_data != DATA_IDLE && strncasecmp(s_line, "ABOR", 4) == 0)
             {
-                reply("425 A listing is still waiting for its data connection.");
-            }
-            else if (s_data == DATA_WAIT_CLIENT)
-            {
-                s_data = DATA_IDLE;
-                s_passive = false;
-                data_flush();
+                bool sending = (s_data == DATA_SENDING);
+                data_end();
+                if (sending)
+                {
+                    reply("426 Transfer aborted.");   /* RFC 959: 426 for the transfer, then 226 */
+                }
                 reply("226 Aborted.");
+            }
+            else if (s_data != DATA_IDLE && strncasecmp(s_line, "QUIT", 4) != 0
+                     && strncasecmp(s_line, "NOOP", 4) != 0)
+            {
+                reply("425 A transfer is still running; ABOR stops it.");
             }
             else
             {

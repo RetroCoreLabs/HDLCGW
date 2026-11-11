@@ -19,6 +19,7 @@
 
 #include "console_out.h"
 #include "gw_console.h"
+#include "file_fetch.h"
 #include "names.h"
 #include "settings.h"
 #include "term.h"
@@ -400,6 +401,7 @@ void node_task_run(void *params)
             term_pass(s_np, now);
             names_pass(s_np, now);
             gw_console_pass(s_np, now);
+            file_fetch_pass(s_np, now);   /* starts a file the FTP server asked for (file_fetch.h) */
             (void)xmsg_node_tick(s_np, now);
         }
         update_status();

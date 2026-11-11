@@ -79,16 +79,21 @@ In a session: ESC on its own breaks the running program (sent as an escape, not 
 followed at once by more bytes is a function key and goes through unchanged. Log out of SINTRAN to
 come back to the prompt.
 
-## FTP (skeleton)
+## FTP
 
-An FTP server on port 21 (passive data port 2121), for one FTP user at a time. Log in with a
-gateway user, the same ones as telnet. The folders:
+An FTP server on port 21, for one FTP user at a time. Passive mode uses data port 2121; active
+mode (`PORT`, `EPRT`) connects back to the client, but only to the client's own address. Log in
+with a gateway user, the same ones as telnet. The folders:
 
 | Folder | What it shows |
 |---|---|
 | `/` | the machines, by the names read from the host (D100, D102, ...), without this gateway |
 | `/D100` | one folder: the SINTRAN user set for your gateway user |
-| `/D100/SYSTEM` | that user's files: **not built yet**, it needs libxmsg's COSMOS file client |
+| `/D100/SYSTEM` | that user's files: download (`RETR`) works; listing is **not built yet** |
+
+A SINTRAN file `NAME:TYPE` is named `NAME.TYPE` in FTP. A download is read whole from SINTRAN
+through libcosmos' COSMOS file client into PSRAM (at most 1 MB) and sent to the client as it
+arrives. A file SINTRAN refuses gives `550` with SINTRAN's error number.
 
 An admin sets each gateway user's SINTRAN account on the `XMSGGW>` command line:
 
@@ -102,14 +107,19 @@ The SINTRAN password has to be sent to SINTRAN, so it is stored on the board as 
 hashed. FTP itself sends the gateway password in clear, as telnet does.
 
 Not built yet:
-- listing, reading or writing SINTRAN files (refused with `550 ... not built yet`);
+- listing files, file size and date (`SIZE`, `MDTM` answer `502`), writing, deleting and
+  renaming files: they need listing and file statistics in libcosmos;
 - showing only the machines that are online now: today `/` lists every machine the host knows by
-  name;
-- active mode (`PORT`): only passive mode works, so Windows' built-in `ftp.exe` cannot list.
+  name.
 
-Tested 2026-11-11 with curl, WinSCP 6.5.6 and tnftp: login, a wrong password refused, `/`, `/D100`
-and `/D102` listed, `cd` and `cd ..` across the levels, an unknown folder refused, the file level
-refused with its message. Windows `ftp.exe` logs in and is told that active mode is not supported.
+Because listing is missing, clients that list a folder before they download (WinSCP) cannot
+download yet.
+
+Tested 2026-11-11: downloads of 255, 5035 and 6835 bytes came back at the sizes SINTRAN's
+FILE-STATISTICS gives, with curl (passive and active), tnftp (passive) and Windows `ftp.exe`
+(active), from D100 and from D102 through D100. A missing file is refused with SINTRAN error 46.
+One curl active-mode download failed once ("server failed to connect to data port") and did not
+fail again in five more tries; the cause is not known.
 
 ## USB console
 

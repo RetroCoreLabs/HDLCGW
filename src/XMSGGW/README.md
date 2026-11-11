@@ -134,8 +134,16 @@ SINTRAN writes a file: `machine(user(password)).NAME:TYPE`. `HELP` shows them wi
 |---|---|
 | `LIST-FILES D100(SYSTEM)` | every file of SYSTEM on D100 |
 | `LIST-FILES D100(SYSTEM).:MODE` | every MODE file (SINTRAN does the matching) |
+| `LIST-FILES D102(SYST).C` | every file starting with C; the user may be abbreviated |
 | `FILE-STAT D100(SYSTEM).CHATKT:MODE` | the file's size, dates and use count, as SINTRAN's FILE-STATISTICS |
 | `COPY-TERM D100(SYSTEM).LOAD-MODE:MODE` | the file shown on the console, bit 7 cleared |
+
+After the dot comes the filter, passed to SINTRAN exactly as typed: `:MODE` for every MODE file,
+`C` for every file starting with C, `CHATKT:MODE` for one file; no filter means every file. A
+capture of SINTRAN's own LIST-FILES from D100 to D102 (2026-11-11) shows the request carries
+`(USER)FILTER'` as typed, an abbreviated user such as `SYST` included, and the remote SINTRAN does
+the matching; the gateway sends the same. SINTRAN's own command needs the dot (`D102(SYSTEM)C` is
+refused there); the gateway also takes the filter without it.
 
 Leave out the password and the stored one is used for your own SINTRAN user; leave out the user
 and your SINTRAN account (the `SINTRAN` command) is used. Spaces work too:

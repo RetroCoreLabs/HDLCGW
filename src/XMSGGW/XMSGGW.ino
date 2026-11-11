@@ -37,6 +37,8 @@
 #include "node_task.h"
 #include "settings.h"
 #include "telnet_task.h"
+#include "ftp_server.h"
+#include "sintran_accounts.h"
 #include "usb_rx.h"
 #include "usb_tx_task.h"
 
@@ -85,6 +87,10 @@ void setup(void)
     line_log_set_error(line_error);
     node_task_init();
     telnet_task_init();
+    if (sintran_accounts_init() != 0 || ftp_server_init() != 0)
+    {
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "FTP: no memory; the FTP server will not run");
+    }
     console_out_event(CONTROL_FRAME_EVENT_BOOT, "XMSGGW version " XMSGGW_VERSION);
 
     /* Line stacks and priorities are HDLCGW's measured ones (HDLCGW.ino).

@@ -63,4 +63,19 @@ int names_lookup(const char *name, uint16_t *system);
  */
 int names_list(char *out, size_t size);
 
+/** One system name from the host's table. */
+typedef struct
+{
+    char name[20];    /**< "D102"; XROUT names are at most 16 (XROUT_NAME_LEN_MAX) */
+    uint16_t system;  /**< its system number */
+} NamesEntry;
+
+/**
+ * @brief Copy the table read from the host, for other tasks (the FTP server's top folder).
+ * @param[out] out  Room for cap entries.
+ * @param[in]  cap  Room.
+ * @return The number copied (0 before the first walk has ended).
+ */
+int names_copy(NamesEntry *out, int cap);
+
 #endif /* NAMES_H */

@@ -12,6 +12,8 @@
 #include <Preferences.h>
 #include <esp_heap_caps.h>
 #include <esp_random.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <mbedtls/pkcs5.h>
 
 #include <libxmsg/auth/auth_hash.h>
@@ -27,6 +29,27 @@ static uint32_t s_hash_ms = 0;
 /* Work buffers, in PSRAM: internal RAM is short (about 28 KB free). */
 static char *s_text = NULL;      /* USERS_TEXT_SIZE: the stored lines */
 static AuthUser *s_all = NULL;   /* USERS_MAX records */
+
+/* Two tasks use the list: the node task (the console's logins and USER commands) and
+ * the telnet task (FTP logins, ftp_server.h). Both share s_text and s_all, so every
+ * public call holds this lock. Recursive: users_put and users_lookup call users_read. */
+static SemaphoreHandle_t s_lock = NULL;
+
+static void lock(void)
+{
+    if (s_lock != NULL)
+    {
+        (void)xSemaphoreTakeRecursive(s_lock, portMAX_DELAY);
+    }
+}
+
+static void unlock(void)
+{
+    if (s_lock != NULL)
+    {
+        (void)xSemaphoreGiveRecursive(s_lock);
+    }
+}
 
 /** @brief PBKDF2-HMAC-SHA256 through mbedTLS (auth_hash.h says how). Timed. */
 static int pbkdf2_mbedtls(void *ctx, const uint8_t *pw, size_t pw_len, const uint8_t *salt,
@@ -81,7 +104,7 @@ uint32_t users_last_hash_ms(void)
     return s_hash_ms;
 }
 
-int users_read(AuthUser *out, int cap)
+static int users_read_locked(AuthUser *out, int cap)
 {
     Preferences p;
     int n = 0;
@@ -123,7 +146,7 @@ int users_read(AuthUser *out, int cap)
     return n;
 }
 
-int users_write(const AuthUser *u, int n)
+static int users_write_locked(const AuthUser *u, int n)
 {
     Preferences p;
     size_t at = 0;
@@ -154,7 +177,7 @@ int users_write(const AuthUser *u, int n)
     return (opened && written == at) ? 0 : -1;
 }
 
-int users_lookup(const char *name, AuthUser *out)
+static int users_lookup_locked(const char *name, AuthUser *out)
 {
     int found = -1;
     if (s_all == NULL)
@@ -174,7 +197,7 @@ int users_lookup(const char *name, AuthUser *out)
     return found;
 }
 
-int users_put(const AuthUser *u)
+static int users_put_locked(const AuthUser *u)
 {
     int at = -1;
     int rc;
@@ -209,6 +232,10 @@ int users_init(void)
 {
     AuthUser admin;
     auth_hash_set_port(&s_port);
+    if (s_lock == NULL)
+    {
+        s_lock = xSemaphoreCreateRecursiveMutex();
+    }
     if (s_text == NULL)
     {
         s_text = (char *)heap_caps_calloc(1, USERS_TEXT_SIZE, MALLOC_CAP_SPIRAM);
@@ -242,3 +269,36 @@ int users_init(void)
                     (unsigned)s_hash_ms);
     return 0;
 }
+
+int users_read(AuthUser *out, int cap)
+{
+    lock();
+    int rc = users_read_locked(out, cap);
+    unlock();
+    return rc;
+}
+
+int users_write(const AuthUser *u, int n)
+{
+    lock();
+    int rc = users_write_locked(u, n);
+    unlock();
+    return rc;
+}
+
+int users_lookup(const char *name, AuthUser *out)
+{
+    lock();
+    int rc = users_lookup_locked(name, out);
+    unlock();
+    return rc;
+}
+
+int users_put(const AuthUser *u)
+{
+    lock();
+    int rc = users_put_locked(u);
+    unlock();
+    return rc;
+}
+

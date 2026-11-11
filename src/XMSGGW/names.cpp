@@ -254,3 +254,29 @@ int names_list(char *out, size_t size)
     }
     return copy.count;
 }
+
+int names_copy(NamesEntry *out, int cap)
+{
+    int n = 0;
+    if (s_have == NULL || out == NULL || cap <= 0)
+    {
+        return 0;
+    }
+    /* Copy one entry at a time inside the lock: a whole table is too much to
+     * hold a spinlock for, and the caller's buffer is its own. */
+    portENTER_CRITICAL(&s_mux);
+    int count = s_have->count;
+    portEXIT_CRITICAL(&s_mux);
+    for (int i = 0; i < count && n < cap; i++)
+    {
+        portENTER_CRITICAL(&s_mux);
+        if (i < s_have->count)
+        {
+            (void)snprintf(out[n].name, sizeof out[n].name, "%s", s_have->e[i].name);
+            out[n].system = s_have->e[i].system;
+            n++;
+        }
+        portEXIT_CRITICAL(&s_mux);
+    }
+    return n;
+}

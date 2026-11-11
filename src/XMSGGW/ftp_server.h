@@ -8,9 +8,9 @@
 **                         (names.h), without this gateway itself         **
 **   /<machine>            one folder: the gateway user's SINTRAN user    **
 **                         (sintran_accounts.h)                           **
-**   /<machine>/<user>     that user's files: RETR works (file_fetch.h, **
-**                         libcosmos' COSMOS file client); listing them  **
-**                         is not built yet                              **
+**   /<machine>/<user>     that user's files: LIST, NLST, SIZE, MDTM and **
+**                         RETR, through libcosmos' COSMOS file client   **
+**                         (file_fetch.h)                                **
 **                                                                       **
 ** Passive mode (PASV, EPSV) and active mode (PORT, EPRT, only back to   **
 ** the client's own address).                                            **

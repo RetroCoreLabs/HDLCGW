@@ -21,6 +21,7 @@
 #include <libxmsg/console/console_tad.h>
 #include <libxmsg/xrout/xrout_names_walk.h>
 
+#include "file_console.h"
 #include "sintran_accounts.h"
 #include <libxmsg/xrout/xrout_walk.h>
 
@@ -119,6 +120,12 @@ static int svc_resolve(void *ctx, const char *system, uint16_t *number)
         return 0;
     }
     return -1;
+}
+
+/** @brief svc_resolve for the file commands (file_console.h). */
+static int file_resolve(const char *name, uint16_t *number)
+{
+    return svc_resolve(NULL, name, number);
 }
 
 static int svc_open(void *ctx, int place, const char *system, uint16_t number,
@@ -445,6 +452,14 @@ static int svc_command(void *ctx, int place, const char *line, AuthLevel level, 
 {
     const char *args = NULL;
     (void)ctx;
+    /* LIST-FILES / FILE-STAT / COPY-TERM: every logged-in user. Not logged: the line can
+     * carry a SINTRAN password. */
+    ConsoleSession *cs = console_host_session(&s_host, place);
+    int file_rc = file_console_command(place, (cs != NULL) ? cs->user : "", line, out, cap);
+    if (file_rc != 0)
+    {
+        return file_rc;
+    }
     bool node = word_is(line, "NODE", &args);
     bool restart = !node && word_is(line, "RESTART", &args);
     bool sintran = !node && !restart && word_is(line, "SINTRAN", &args);
@@ -473,6 +488,13 @@ static int svc_command(void *ctx, int place, const char *line, AuthLevel level, 
     s_restart = true;
     s_restart_at = millis() + 500u;   /* time for the text to reach the user */
     return 1;
+}
+
+/** @brief The user stopped an application command (escape) or left. */
+static void svc_command_cancel(void *ctx, int place)
+{
+    (void)ctx;
+    file_console_cancel(place);
 }
 
 /* ------------------------------------------------------- telnet lines */
@@ -665,6 +687,11 @@ int gw_console_init(void)
         console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the console");
         return -1;
     }
+    if (file_console_init(file_resolve, settings_node()) != 0)
+    {
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the file commands");
+        return -1;
+    }
     if (users_init() != 0)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "The user list could not be read or written");
@@ -698,6 +725,8 @@ int gw_console_init(void)
     cfg.services.link_info = svc_link_info;
     cfg.services.info_more = svc_info_more;
     cfg.services.command = svc_command;
+    cfg.services.command_cancel = svc_command_cancel;
+    cfg.services.help_user = FILE_CONSOLE_HELP;
     cfg.services.help_admin =
         "NODE <n>           show or store our node number, used after RESTART (admin)\r\n"
         "RESTART            restart the gateway; every session ends (admin)\r\n";
@@ -764,6 +793,7 @@ void gw_console_pass(XmsgNode *node, uint32_t now)
     telnet_pass(now);
     tad_pass(now);
     onward_pass();
+    file_console_pass(node, &s_host, now);
     console_host_poll(&s_host, now);
     if (s_restart && (int32_t)(now - s_restart_at) >= 0)
     {

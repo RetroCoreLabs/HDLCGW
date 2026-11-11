@@ -1,5 +1,5 @@
 /**************************************************************************
-** FTP_SERVER - FTP into the SINTRAN machines (skeleton)                 **
+** FTP_SERVER - FTP into the SINTRAN machines                            **
 **                                                                       **
 ** The commands follow RFC 959 (FTP) and RFC 2428 (EPSV). Replies are    **
 ** the RFC's codes; the texts are ours.                                  **
@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <fnmatch.h>
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -42,7 +43,7 @@ typedef enum
 {
     LEVEL_ROOT = 0,  /**< "/": the machines */
     LEVEL_MACHINE,   /**< "/D100": the SINTRAN user's folder */
-    LEVEL_USER       /**< "/D100/RONNY": the files (not built yet) */
+    LEVEL_USER       /**< "/D100/RONNY": the files */
 } level;
 
 /** A place in the folder tree. */
@@ -73,9 +74,21 @@ typedef enum
 /** What is sent on it. */
 typedef enum
 {
-    XFER_LISTING = 0, /**< s_listing */
-    XFER_FILE         /**< a SINTRAN file, as file_fetch.h brings it in */
+    XFER_LISTING = 0, /**< s_listing: the machine and user folders */
+    XFER_FILE,        /**< a SINTRAN file, as file_fetch.h brings it in */
+    XFER_DIR          /**< a SINTRAN user's files, as file_fetch.h lists them */
 } xfer_kind;
+
+/** A SIZE or MDTM waiting for SINTRAN's answer (the control connection is not read meanwhile). */
+typedef enum
+{
+    STAT_NONE = 0,
+    STAT_SIZE,
+    STAT_MDTM
+} stat_wait;
+
+/** Listing entries formatted per pass while sending a user's files. */
+#define DIR_BATCH 8u
 
 /** Bytes handed to the socket per pass while sending a file. */
 #define FILE_CHUNK 1024u
@@ -107,7 +120,13 @@ static WiFiClient s_dconn;            /* the data connection while DATA_SENDING 
 static uint32_t s_data_deadline = 0;
 static size_t s_listing_len = 0;
 static uint32_t s_file_sent = 0;      /* XFER_FILE: bytes written to the data connection */
-static char s_file_name[80];          /* XFER_FILE: "CHATLG2:SYMB", for the log and replies */
+static char s_file_name[80];          /* XFER_FILE, SIZE, MDTM: "CHATLG2:SYMB" */
+static uint32_t s_dir_sent = 0;       /* XFER_DIR: entries written to the data connection */
+static bool s_dir_names_only = false; /* XFER_DIR: NLST (names) rather than LIST */
+static char s_dir_owner[SINTRAN_ACCOUNT_FIELD_MAX + 1u]; /* XFER_DIR: the owner column */
+static stat_wait s_stat = STAT_NONE;
+static char s_dir_glob[64];           /* XFER_DIR: "CHAT*" from "NLST CHAT*"; "" = every file */
+static FaFileEntry *s_dir = NULL;     /* DIR_BATCH, PSRAM */
 
 static char *s_listing = NULL;        /* LISTING_SIZE, PSRAM */
 static uint8_t *s_chunk = NULL;       /* FILE_CHUNK, PSRAM: keeps the telnet task's stack small */
@@ -128,7 +147,12 @@ int ftp_server_init(void)
     {
         s_chunk = (uint8_t *)heap_caps_malloc(FILE_CHUNK, MALLOC_CAP_SPIRAM);
     }
-    return (s_listing != NULL && s_names != NULL && s_chunk != NULL && file_fetch_init() == 0) ? 0 : -1;
+    if (s_dir == NULL)
+    {
+        s_dir = (FaFileEntry *)heap_caps_calloc(DIR_BATCH, sizeof(FaFileEntry), MALLOC_CAP_SPIRAM);
+    }
+    return (s_listing != NULL && s_names != NULL && s_chunk != NULL && s_dir != NULL
+            && file_fetch_init() == 0) ? 0 : -1;
 }
 
 void ftp_server_get_stats(ftp_server_stats *out)
@@ -190,13 +214,14 @@ static void data_end(void)
     {
         s_dconn.stop();
     }
-    if (s_xfer == XFER_FILE && s_data != DATA_IDLE)
+    if ((s_xfer == XFER_FILE || s_xfer == XFER_DIR) && s_data != DATA_IDLE)
     {
         file_fetch_release();
     }
     s_data = DATA_IDLE;
     s_mode = MODE_NONE;
     s_file_sent = 0;
+    s_dir_sent = 0;
     data_flush();
 }
 
@@ -215,6 +240,11 @@ static void session_end(const char *why)
     s_line_len = 0;
     s_line_too_long = false;
     data_end();
+    if (s_stat != STAT_NONE)
+    {
+        s_stat = STAT_NONE;
+        file_fetch_release();
+    }
     memset(&s_cwd, 0, sizeof s_cwd);
 }
 
@@ -431,8 +461,116 @@ static int listing_build(const place *p, bool names_only, const char **why)
         }
         return 0;
     }
-    *why = "550 Listing SINTRAN files is not built yet (needs the COSMOS file client).";
-    return -1;
+    return 1;   /* LEVEL_USER: the files come from SINTRAN (dir_start) */
+}
+
+/**
+ * @brief The FTP name of a SINTRAN file: NAME.TYPE (Ronny, 2026-11-11). A file with no type
+ *        is "NAME." so that RETR of that name asks SINTRAN for exactly "NAME:".
+ */
+static void dir_ftp_name(const FaFileEntry *e, char *out, size_t cap)
+{
+    (void)snprintf(out, cap, "%s.%s", e->name, e->type);
+}
+
+/** @brief Month abbreviations for "ls -l" dates. */
+static const char *const MONTHS[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+
+/**
+ * @brief One "ls -l" line for a SINTRAN file. The size is the byte count SINTRAN keeps;
+ *        an entry with none (a device file) shows 0. The date is the last write, else the
+ *        creation, as SINTRAN's local time (it has no time zone); none shows 1970.
+ *        Every version of a file is its own entry and is listed (the version number is
+ *        not in the entry; libxmsg, 2026-11-11), so a name can appear more than once.
+ */
+static int dir_line(const FaFileEntry *e, char *out, size_t cap)
+{
+    char name[32];
+    FaNdDate d;
+    dir_ftp_name(e, name, sizeof name);
+    if (s_dir_names_only)
+    {
+        return snprintf(out, cap, "%s\r\n", name);
+    }
+    bool dated = fa_nd_date_split(e->last_write, &d) || fa_nd_date_split(e->created, &d);
+    if (!dated || d.month < 1u || d.month > 12u)
+    {
+        return snprintf(out, cap, "-rw-r--r--   1 %-8s %-8s %10lu Jan  1  1970 %s\r\n", s_dir_owner,
+                        s_dir_owner, (unsigned long)(e->has_bytes ? e->bytes : 0u), name);
+    }
+    /* Always the year form: "ls -l" shows hh:mm only for the last six months, and SINTRAN
+     * dates are decades old, so the year form is what a client expects to parse. */
+    return snprintf(out, cap, "-rw-r--r--   1 %-8s %-8s %10lu %s %2u %5u %s\r\n", s_dir_owner,
+                    s_dir_owner, (unsigned long)(e->has_bytes ? e->bytes : 0u), MONTHS[d.month - 1u],
+                    (unsigned)d.day, (unsigned)d.year, name);
+}
+
+/**
+ * @brief Work out which SINTRAN file a RETR / SIZE / MDTM argument names: its folder must be
+ *        /<machine>/<user>; NAME.TYPE becomes NAME:TYPE in s_file_name.
+ * @return NULL, or the reply to send when it names no file.
+ */
+static const char *file_target(const char *args, place *p)
+{
+    char dir[LINE_MAX_CHARS + 1];
+    const char *why = NULL;
+    const char *slash = strrchr(args, '/');
+    const char *file = (slash != NULL) ? slash + 1 : args;
+    size_t dir_len = (slash != NULL) ? (size_t)(slash - args) : 0u;
+
+    if (*file == '\0' || dir_len >= sizeof dir)
+    {
+        return "501 Give a file name.";
+    }
+    if (slash == NULL)
+    {
+        *p = s_cwd;   /* a bare file name: in the current folder */
+    }
+    else
+    {
+        memcpy(dir, args, dir_len);
+        dir[dir_len] = '\0';
+        if (slash == args)
+        {
+            (void)snprintf(dir, sizeof dir, "/");
+        }
+        if (resolve(dir, p, &why) != 0)
+        {
+            return why;
+        }
+    }
+    if (p->lv != LEVEL_USER)
+    {
+        return "550 Files are inside /<machine>/<SINTRAN user>.";
+    }
+    /* NAME.TYPE -> NAME:TYPE at the last dot; a name already holding ':' is kept. */
+    (void)snprintf(s_file_name, sizeof s_file_name, "%s", file);
+    if (strchr(s_file_name, ':') == NULL)
+    {
+        char *dot = strrchr(s_file_name, '.');
+        if (dot != NULL)
+        {
+            *dot = ':';
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief Ask SINTRAN for the files of the place, or one file's statistics (filter).
+ * @return 0, or -1 when no job could start (no SINTRAN account, or one already running).
+ */
+static int dir_start(const place *p, const char *filter)
+{
+    char password[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
+    int rc = -1;
+    if (sintran_account_get(s_user_name, s_dir_owner, password) == 0)
+    {
+        rc = file_fetch_list(p->system, s_dir_owner, password, filter);
+    }
+    memset(password, 0, sizeof password);
+    return rc;
 }
 
 /**
@@ -470,13 +608,104 @@ static void cmd_list(const char *args, bool names_only)
             args++;
         }
     }
-    if ((*args != '\0' && resolve(args, &p, &why) != 0) || listing_build(&p, names_only, &why) != 0)
+    /* "NLST CHAT*" (tnftp's nlist, mget): a name pattern, not a folder. It is matched
+     * here against the FTP names of the current folder's files. */
+    s_dir_glob[0] = '\0';
+    if (strpbrk(args, "*?") != NULL && strchr(args, '/') == NULL && strlen(args) < sizeof s_dir_glob)
+    {
+        (void)snprintf(s_dir_glob, sizeof s_dir_glob, "%s", args);
+        args = "";
+    }
+    int built = -1;
+    if ((*args != '\0' && resolve(args, &p, &why) != 0) || (built = listing_build(&p, names_only, &why)) < 0)
     {
         data_end();
         reply(why);
         return;
     }
-    (void)transfer_begin(XFER_LISTING, "the listing");
+    if (built == 0)
+    {
+        (void)transfer_begin(XFER_LISTING, "the listing");
+        return;
+    }
+    /* A user's folder: the files come from SINTRAN while they are sent. */
+    if (dir_start(&p, "") != 0)
+    {
+        data_end();
+        reply("450 The gateway cannot ask SINTRAN for the files now; try again.");
+        return;
+    }
+    s_dir_names_only = names_only;
+    if (!transfer_begin(XFER_DIR, "the file list"))
+    {
+        file_fetch_release();
+    }
+}
+
+/** @brief SIZE / MDTM: ask SINTRAN for that one file (FILE-STATISTICS); stat_pass replies. */
+static void cmd_stat(const char *args, stat_wait which)
+{
+    place p;
+    const char *why = file_target(args, &p);
+    if (why != NULL)
+    {
+        reply(why);
+        return;
+    }
+    if (dir_start(&p, s_file_name) != 0)
+    {
+        reply("450 The gateway cannot ask SINTRAN now; try again.");
+        return;
+    }
+    s_stat = which;
+}
+
+/** @brief A SIZE / MDTM under way: reply once SINTRAN has answered. */
+static void stat_pass(void)
+{
+    file_fetch_status st;
+    file_fetch_get(&st);
+    if (st.state != FILE_FETCH_DONE && st.state != FILE_FETCH_FAILED)
+    {
+        return;
+    }
+    stat_wait which = s_stat;
+    s_stat = STAT_NONE;
+    if (st.state == FILE_FETCH_FAILED)
+    {
+        char why[96];
+        file_fetch_reason(&st, why, sizeof why);
+        file_fetch_release();
+        replyf("550 %s: %s.", s_file_name, why);
+        return;
+    }
+    if (st.entries == 0u || file_fetch_entries(0, s_dir, 1) != 1u)
+    {
+        file_fetch_release();
+        replyf("550 %s: no such file.", s_file_name);
+        return;
+    }
+    file_fetch_release();
+    const FaFileEntry *e = &s_dir[0];
+    if (which == STAT_SIZE)
+    {
+        if (!e->has_bytes)
+        {
+            replyf("550 %s: SINTRAN keeps no byte count for it.", s_file_name);
+            return;
+        }
+        replyf("213 %lu", (unsigned long)e->bytes);
+        return;
+    }
+    FaNdDate d;
+    if (!fa_nd_date_split(e->last_write, &d) && !fa_nd_date_split(e->created, &d))
+    {
+        replyf("550 %s: SINTRAN has no date for it.", s_file_name);
+        return;
+    }
+    /* RFC 3659 asks for UTC; SINTRAN keeps local time with no zone, so this is its local time. */
+    replyf("213 %04u%02u%02u%02u%02u%02u", (unsigned)d.year, (unsigned)d.month, (unsigned)d.day,
+           (unsigned)d.hour, (unsigned)d.minute, (unsigned)d.second);
 }
 
 /**
@@ -487,55 +716,18 @@ static void cmd_list(const char *args, bool names_only)
  */
 static void cmd_retr(const char *args)
 {
-    char dir[LINE_MAX_CHARS + 1];
     char user[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
     char password[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
     place p;
-    const char *why = NULL;
+    const char *why = file_target(args, &p);
     const char *slash = strrchr(args, '/');
     const char *file = (slash != NULL) ? slash + 1 : args;
-    size_t dir_len = (slash != NULL) ? (size_t)(slash - args) : 0u;
 
-    if (*file == '\0' || dir_len >= sizeof dir)
+    if (why != NULL)
     {
         data_end();
-        reply("501 Give a file name.");
+        reply(why);
         return;
-    }
-    if (slash == NULL)
-    {
-        p = s_cwd;   /* a bare file name: in the current folder */
-    }
-    else
-    {
-        memcpy(dir, args, dir_len);
-        dir[dir_len] = '\0';
-        if (slash == args)
-        {
-            (void)snprintf(dir, sizeof dir, "/");
-        }
-        if (resolve(dir, &p, &why) != 0)
-        {
-            data_end();
-            reply(why);
-            return;
-        }
-    }
-    if (p.lv != LEVEL_USER)
-    {
-        data_end();
-        reply("550 Files are inside /<machine>/<SINTRAN user>.");
-        return;
-    }
-    /* NAME.TYPE -> NAME:TYPE at the last dot; a name already holding ':' is kept. */
-    (void)snprintf(s_file_name, sizeof s_file_name, "%s", file);
-    if (strchr(s_file_name, ':') == NULL)
-    {
-        char *dot = strrchr(s_file_name, '.');
-        if (dot != NULL)
-        {
-            *dot = ':';
-        }
     }
     if (sintran_account_get(s_user_name, user, password) != 0
         || file_fetch_start(p.system, user, password, s_file_name) != 0)
@@ -549,6 +741,62 @@ static void cmd_retr(const char *args)
     if (!transfer_begin(XFER_FILE, file))
     {
         file_fetch_release();
+    }
+}
+
+/**
+ * @brief Write the next entries of a user's files; end the listing when SINTRAN has sent
+ *        them all, or failed.
+ */
+static void dir_send(void)
+{
+    file_fetch_status st;
+    file_fetch_get(&st);
+    size_t n = file_fetch_entries(s_dir_sent, s_dir, DIR_BATCH);
+    for (size_t i = 0; i < n; i++)
+    {
+        if (s_dir_glob[0] != '\0')
+        {
+            char name[32];
+            dir_ftp_name(&s_dir[i], name, sizeof name);
+            if (fnmatch(s_dir_glob, name, FNM_CASEFOLD) != 0)
+            {
+                s_dir_sent++;
+                continue;
+            }
+        }
+        int len = dir_line(&s_dir[i], (char *)s_chunk, FILE_CHUNK);
+        if (len <= 0 || (size_t)len >= FILE_CHUNK)
+        {
+            continue;
+        }
+        if (s_dconn.write(s_chunk, (size_t)len) != (size_t)len)
+        {
+            data_end();
+            reply("426 The data connection broke during the listing.");
+            return;
+        }
+        s_dir_sent++;
+    }
+    if (n > 0u || s_dir_sent < st.entries)
+    {
+        return;
+    }
+    if (st.state == FILE_FETCH_DONE)
+    {
+        console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: file list sent, %lu files%s",
+                        (unsigned long)s_dir_sent, st.list_full ? " (more not kept)" : "");
+        data_end();
+        s_stats.listings++;
+        reply(st.list_full ? "226 File list sent; it was cut at the gateway's limit."
+                           : "226 File list sent.");
+    }
+    else if (st.state == FILE_FETCH_FAILED)
+    {
+        char why[96];
+        file_fetch_reason(&st, why, sizeof why);
+        data_end();
+        replyf("451 The file list failed: %s.", why);
     }
 }
 
@@ -642,6 +890,11 @@ static void data_pass(uint32_t now)
     if (s_xfer == XFER_FILE)
     {
         file_send();
+        return;
+    }
+    if (s_xfer == XFER_DIR)
+    {
+        dir_send();
         return;
     }
     size_t sent = (s_listing_len > 0u) ? s_dconn.write((const uint8_t *)s_listing, s_listing_len) : 0u;
@@ -794,7 +1047,9 @@ static void command(const char *line)
     {
         reply("211-Features:");
         reply(" EPSV");
+        reply(" MDTM");
         reply(" PASV");
+        reply(" SIZE");
         reply(" UTF8");
         reply("211 End");
         return;
@@ -886,12 +1141,14 @@ static void command(const char *line)
         cmd_list(a, true);
         return;
     }
-    if (is_cmd(line, "SIZE", &a) || is_cmd(line, "MDTM", &a))
+    if (is_cmd(line, "SIZE", &a))
     {
-        /* A file's size and date need FILE-STATISTICS, which libcosmos does not have yet.
-         * 502 (not implemented), not 550: curl reads 550 on SIZE as "the file does not
-         * exist" and never sends RETR (seen 2026-11-11). */
-        reply("502 File size and date are not built yet.");
+        cmd_stat(a, STAT_SIZE);
+        return;
+    }
+    if (is_cmd(line, "MDTM", &a))
+    {
+        cmd_stat(a, STAT_MDTM);
         return;
     }
     if (is_cmd(line, "STOR", &a) || is_cmd(line, "DELE", &a) || is_cmd(line, "RNFR", &a)
@@ -917,7 +1174,9 @@ static void ctrl_pass(uint32_t now)
         session_end("client left");
         return;
     }
-    while (s_on && s_ctrl.available() > 0)
+    /* A SIZE / MDTM is waiting for SINTRAN: the next command stays unread until it is
+     * answered (FTP replies come in order). */
+    while (s_on && s_stat == STAT_NONE && s_ctrl.available() > 0)
     {
         int c = s_ctrl.read();
         if (c < 0)
@@ -1006,6 +1265,10 @@ void ftp_server_pass(uint32_t now)
     }
     if (s_on)
     {
+        if (s_stat != STAT_NONE)
+        {
+            stat_pass();
+        }
         ctrl_pass(now);
         data_pass(now);
     }

@@ -150,10 +150,8 @@ and your SINTRAN account (the `SINTRAN` command) is used. Spaces work too:
 `LIST-FILES D100 SYSTEM :SYMB`. One file command runs at a time on the gateway; another user
 is told to try again.
 
-The escape key stops the output and brings the prompt back at once, but the gateway goes on
-reading from SINTRAN until the listing or file has ended (up to a minute for a big folder), and
-until then a new file command is told to try again. Stopping SINTRAN early needs a stop call in
-libcosmos' file client, asked for 2026-11-11.
+The escape key stops a running command at once: the output, and SINTRAN's work too (the file
+client's stop call), so the next command can start straight away.
 
 Not shown yet: the file number and version (`;1`) SINTRAN prints, which are not in the entry the
 file client hands over, and the access lines (`PUBLIC ACCESS : READ`...), shown as the raw access

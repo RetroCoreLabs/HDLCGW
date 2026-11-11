@@ -7,7 +7,8 @@
 ** stored, the store is started with libxmsg's default admin: name       **
 ** "admin", password "admin", which must be changed at the first login.  **
 **                                                                       **
-** Called from the telnet task only; no lock.                            **
+** Used by the node task (console logins) and the telnet task (FTP     **
+** logins); every call holds one recursive lock.                         **
 **                                                                       **
 ** Ronny Hansen                                                          **
 ** SPDX-License-Identifier: MIT  Copyright (c) 2026 Ronny Hansen         **

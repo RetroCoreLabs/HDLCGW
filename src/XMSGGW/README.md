@@ -79,6 +79,38 @@ In a session: ESC on its own breaks the running program (sent as an escape, not 
 followed at once by more bytes is a function key and goes through unchanged. Log out of SINTRAN to
 come back to the prompt.
 
+## FTP (skeleton)
+
+An FTP server on port 21 (passive data port 2121), for one FTP user at a time. Log in with a
+gateway user, the same ones as telnet. The folders:
+
+| Folder | What it shows |
+|---|---|
+| `/` | the machines, by the names read from the host (D100, D102, ...), without this gateway |
+| `/D100` | one folder: the SINTRAN user set for your gateway user |
+| `/D100/SYSTEM` | that user's files: **not built yet**, it needs libxmsg's COSMOS file client |
+
+An admin sets each gateway user's SINTRAN account on the `XMSGGW>` command line:
+
+| Command | What it does |
+|---|---|
+| `SINTRAN` | list the accounts (passwords are never shown) |
+| `SINTRAN <gateway-user> <sintran-user> <password>` | set one; the password may be left out |
+| `SINTRAN <gateway-user> -` | remove one |
+
+The SINTRAN password has to be sent to SINTRAN, so it is stored on the board as typed, not
+hashed. FTP itself sends the gateway password in clear, as telnet does.
+
+Not built yet:
+- listing, reading or writing SINTRAN files (refused with `550 ... not built yet`);
+- showing only the machines that are online now: today `/` lists every machine the host knows by
+  name;
+- active mode (`PORT`): only passive mode works, so Windows' built-in `ftp.exe` cannot list.
+
+Tested 2026-11-11 with curl, WinSCP 6.5.6 and tnftp: login, a wrong password refused, `/`, `/D100`
+and `/D102` listed, `cd` and `cd ..` across the levels, an unknown folder refused, the file level
+refused with its message. Windows `ftp.exe` logs in and is told that active mode is not supported.
+
 ## USB console
 
 Control frames from a host program (HELLO, COMMAND, LOG_LEVEL, STAT_PUSH, PING; replies, LOG,

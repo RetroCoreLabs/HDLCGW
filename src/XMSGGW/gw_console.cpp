@@ -20,6 +20,8 @@
 #include <libxmsg/console/console.h>
 #include <libxmsg/console/console_tad.h>
 #include <libxmsg/xrout/xrout_names_walk.h>
+
+#include "sintran_accounts.h"
 #include <libxmsg/xrout/xrout_walk.h>
 
 #include "libhdlc/esp32s2/spi_tx_task.h"
@@ -373,6 +375,70 @@ static void cmd_node(const char *args, char *out, size_t cap)
     (void)snprintf(out, cap, "node number %lu stored; RESTART to use it\r\n", value);
 }
 
+/**
+ * @brief SINTRAN: the SINTRAN account a gateway user's FTP session works as
+ *        (sintran_accounts.h). Admin only.
+ *          SINTRAN                               list (passwords are never shown)
+ *          SINTRAN <gateway-user> <sintran-user> [<password>]   set
+ *          SINTRAN <gateway-user> -              remove
+ */
+static void cmd_sintran(const char *args, char *out, size_t cap)
+{
+    char gw[AUTH_NAME_MAX + 1u];
+    char user[SINTRAN_ACCOUNT_FIELD_MAX + 2u];
+    char pw[SINTRAN_ACCOUNT_FIELD_MAX + 2u];
+    gw[0] = '\0';
+    user[0] = '\0';
+    pw[0] = '\0';
+    /* Field widths: one more than allowed, so a too-long word is caught below. */
+    int n = sscanf(args, "%32s %33s %33s", gw, user, pw);
+    if (n <= 0)
+    {
+        int at = snprintf(out, cap, "  gateway user     SINTRAN user\r\n");
+        if (at > 0 && (size_t)at < cap && sintran_accounts_list(&out[at], cap - (size_t)at) == 0)
+        {
+            (void)snprintf(out, cap,
+                           "no SINTRAN accounts set; SINTRAN <gateway-user> <sintran-user> <password>\r\n");
+        }
+        return;
+    }
+    if (n == 2 && strcmp(user, "-") == 0)
+    {
+        if (sintran_account_remove(gw) == 0)
+        {
+            (void)snprintf(out, cap, "SINTRAN account of %s removed\r\n", gw);
+        }
+        else
+        {
+            (void)snprintf(out, cap, "%s has no SINTRAN account\r\n", gw);
+        }
+        return;
+    }
+    if (n < 2)
+    {
+        (void)snprintf(out, cap,
+                       "SINTRAN <gateway-user> <sintran-user> <password> (the password may be left out),"
+                       " or SINTRAN <gateway-user> -\r\n");
+        return;
+    }
+    if (!sintran_account_field_ok(user) || (pw[0] != '\0' && !sintran_account_field_ok(pw)))
+    {
+        (void)snprintf(out, cap, "a SINTRAN user or password is 1 to %u characters, without spaces or ( ) . :\r\n",
+                       (unsigned)SINTRAN_ACCOUNT_FIELD_MAX);
+        memset(pw, 0, sizeof pw);
+        return;
+    }
+    if (sintran_account_set(gw, user, pw) != 0)
+    {
+        (void)snprintf(out, cap, "could not store it (bad gateway user name, or the list is full)\r\n");
+        memset(pw, 0, sizeof pw);
+        return;
+    }
+    (void)snprintf(out, cap, "%s works as SINTRAN user %s (%s)\r\n", gw, user,
+                   (pw[0] != '\0') ? "password set" : "no password");
+    memset(pw, 0, sizeof pw);
+}
+
 /** @brief Lines the core does not know (console.h services.command). */
 static int svc_command(void *ctx, int place, const char *line, AuthLevel level, char *out,
                        size_t cap)
@@ -381,13 +447,20 @@ static int svc_command(void *ctx, int place, const char *line, AuthLevel level, 
     (void)ctx;
     bool node = word_is(line, "NODE", &args);
     bool restart = !node && word_is(line, "RESTART", &args);
-    if (!node && !restart)
+    bool sintran = !node && !restart && word_is(line, "SINTRAN", &args);
+    if (!node && !restart && !sintran)
     {
         return 0;
     }
     if (level != AUTH_LEVEL_ADMIN)
     {
         (void)snprintf(out, cap, "not allowed\r\n");
+        return 1;
+    }
+    if (sintran)
+    {
+        /* Not logged: the line can carry a SINTRAN password. */
+        cmd_sintran(args, out, cap);
         return 1;
     }
     console_out_log(CONTROL_FRAME_LOG_INFO, "Console place %d: %s", place, line);

@@ -23,6 +23,7 @@
 #include <libxmsg/term/term_telnet.h>
 
 #include "console_out.h"
+#include "ftp_server.h"
 #include "settings.h"
 
 #define WIFI_RETRY_MS 20000u
@@ -384,6 +385,7 @@ static void run_wifi(uint32_t now)
         s_server.begin();
         s_server.setNoDelay(true);
         s_server_running = true;
+        ftp_server_start();
     }
     else if (!up && s_wifi_was_up)
     {
@@ -403,6 +405,7 @@ static void run_wifi(uint32_t now)
             s_server.end();
             s_server_running = false;
         }
+        ftp_server_stop();
     }
 }
 
@@ -428,6 +431,9 @@ void telnet_task_run(void *params)
                 conn_pass(&s_conn[i]);
             }
         }
+        /* The FTP server runs here too (ftp_server.h): it needs WiFi, which this
+         * task owns, and a task of its own would cost internal RAM. */
+        ftp_server_pass(now);
         vTaskDelay(pdMS_TO_TICKS(2));
     }
 }

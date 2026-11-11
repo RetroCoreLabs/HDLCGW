@@ -32,6 +32,7 @@ static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 /* Shared between the tasks, under s_mux. */
 static file_fetch_status s_st;
 static bool s_abandoned = false;    /* the FTP side let go while the client still ran */
+static bool s_cancel_sent = false;  /* node task: fa_client_cancel called for this job */
 
 /* The request, written by the FTP side while IDLE, read by the node task once ASKED. */
 static job_kind s_kind = JOB_READ;
@@ -245,11 +246,23 @@ void file_fetch_pass(XmsgNode *node, uint32_t now)
 {
     portENTER_CRITICAL(&s_mux);
     bool asked = (s_st.state == FILE_FETCH_ASKED);
+    bool stop = (s_st.state == FILE_FETCH_RUNNING) && s_abandoned && !s_cancel_sent;
     portEXIT_CRITICAL(&s_mux);
+    if (stop && s_client != NULL)
+    {
+        /* The FTP user aborted or left: stop SINTRAN now rather than read to the end.
+         * The client ends with done(XMSG_ECANCELED), which sets IDLE (cb_done). */
+        s_cancel_sent = true;
+        int rc = fa_client_cancel(s_client, now);
+        console_out_log(CONTROL_FRAME_LOG_INFO, "FTP %s: %s abandoned: cancel %d",
+                        (s_kind == JOB_LIST) ? "list" : "fetch", s_spec, rc);
+        return;
+    }
     if (!asked || node == NULL || s_client == NULL)
     {
         return;
     }
+    s_cancel_sent = false;
     FaClientConfig cfg;
     FaClientCallbacks cb = { NULL, cb_opened, cb_data, cb_done, cb_directory, cb_entry };
     fa_client_config_default(&cfg);

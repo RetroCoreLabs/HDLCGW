@@ -64,6 +64,7 @@ const char FILE_CONSOLE_HELP[] =
     "    LIST-FILES D100 SYSTEM :SYMB         the same with spaces\r\n"
     "    FILE-STAT D100(SYSTEM).CHATKT:MODE   one file\r\n"
     "    FILE-STAT D100(SYSTEM).:MODE         every MODE file\r\n"
+    "    FILE-STAT D100(SYSTEM)               every file\r\n"
     "    COPY-TERM D100(SYSTEM).LOAD-MODE:MODE\r\n"
     "  The escape key stops a command that is running.\r\n";
 
@@ -80,6 +81,7 @@ static cmd_kind s_kind = CMD_LIST;
 static int s_place = -1;
 static bool s_cancelled = false;       /* the user left or pressed escape; output is dropped */
 static bool s_closing = false;         /* the closing lines are written */
+static bool s_cancel_sent = false;     /* fa_client_cancel called for this command */
 static bool s_pend_raw = false;        /* s_pend holds file bytes: console_command_raw */
 static uint16_t s_system = 0;
 static char s_machine[24];
@@ -87,6 +89,7 @@ static char s_user[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
 static char s_password[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
 static char s_filter[FA_CLIENT_SPEC];
 static char s_dir[24];                 /* "PACK-ONE", from the directory callback */
+static char s_dir_user[24];            /* "SYSTEM", from the directory callback */
 static uint32_t s_ring_in = 0;
 static uint32_t s_ring_out = 0;
 static uint32_t s_ring_lost = 0;
@@ -318,7 +321,8 @@ int file_console_command(int place, const char *gw_user, const char *line, char 
     char filter[sizeof s_filter];
     bool pw_given = false;
     const char *why = parse_target(args, machine, user, password, &pw_given, filter);
-    if (why == NULL && (kind == CMD_STAT || kind == CMD_COPY) && filter[0] == '\0')
+    /* FILE-STAT with no file: every file, as LIST-FILES (Ronny, 2026-11-11). */
+    if (why == NULL && kind == CMD_COPY && filter[0] == '\0')
     {
         why = "give the file: D100(SYSTEM).NAME:TYPE";
     }
@@ -379,7 +383,8 @@ void file_console_cancel(int place)
 {
     if (s_state != ST_IDLE && place == s_place)
     {
-        /* The client has no way to stop early: it runs to its end, its output dropped. */
+        /* Ronny (2026-11-11): escape MUST stop the listing. The pass stops the client
+         * (fa_client_cancel); its output is dropped meanwhile. */
         s_cancelled = true;
     }
 }
@@ -411,8 +416,10 @@ static void cb_data(void *ctx, uint32_t offset, const uint8_t *bytes, size_t n)
 static void cb_directory(void *ctx, const char *directory, const char *user)
 {
     (void)ctx;
-    (void)user;
     (void)snprintf(s_dir, sizeof s_dir, "%s", directory);
+    /* SINTRAN's full user name: "SYST" typed is "SYSTEM" here, as SINTRAN's own
+     * LIST-FILES prints it (D100 to D102, 2026-11-11). */
+    (void)snprintf(s_dir_user, sizeof s_dir_user, "%s", user);
 }
 
 static void cb_entry(void *ctx, const FaFileEntry *e)
@@ -474,7 +481,8 @@ static void pend_add(const char *fmt, ...)
 static void entry_text(const FaFileEntry *e)
 {
     char date[48];
-    pend_add("FILE : %s.(%s:%s)%s:%s\r\n", s_machine, (s_dir[0] != '\0') ? s_dir : "?", s_user, e->name,
+    pend_add("FILE : %s.(%s:%s)%s:%s\r\n", s_machine, (s_dir[0] != '\0') ? s_dir : "?",
+             (s_dir_user[0] != '\0') ? s_dir_user : s_user, e->name,
              e->type);
     if (s_kind != CMD_STAT)
     {
@@ -598,6 +606,7 @@ static void finish(void)
     s_state = ST_IDLE;
     s_place = -1;
     s_cancelled = false;
+    s_cancel_sent = false;
     s_closing = false;
 }
 
@@ -607,6 +616,7 @@ static void start(XmsgNode *node, ConsoleSession *s, uint32_t now)
     FaClientConfig cfg;
     FaClientCallbacks cb = { NULL, cb_opened, cb_data, cb_done, cb_directory, cb_entry };
     s_dir[0] = '\0';
+    s_dir_user[0] = '\0';
     s_ring_in = s_ring_out = s_ring_lost = 0;
     s_data_in = s_data_out = 0;
     s_data_lost = false;
@@ -655,7 +665,14 @@ void file_console_pass(XmsgNode *node, ConsoleHost *host, uint32_t now)
     }
     if (s_cancelled)
     {
-        /* Output is dropped; the command ends when the client does. */
+        /* Stop SINTRAN: the client tears the conversation down and ends with
+         * done(XMSG_ECANCELED); output is dropped until then. */
+        if (s_state == ST_RUNNING && !s_cancel_sent)
+        {
+            s_cancel_sent = true;
+            int rc = fa_client_cancel(s_client, now);
+            console_out_log(CONTROL_FRAME_LOG_INFO, "File command stopped by the user: cancel %d", rc);
+        }
         s_ring_out = s_ring_in;
         s_data_out = s_data_in;
         if (s_state == ST_ENDED)

@@ -89,11 +89,18 @@ with a gateway user, the same ones as telnet. The folders:
 |---|---|
 | `/` | the machines, by the names read from the host (D100, D102, ...), without this gateway |
 | `/D100` | one folder: the SINTRAN user set for your gateway user |
-| `/D100/SYSTEM` | that user's files: download (`RETR`) works; listing is **not built yet** |
+| `/D100/SYSTEM` | that user's files, with size and date; download them (`RETR`) |
 
 A SINTRAN file `NAME:TYPE` is named `NAME.TYPE` in FTP. A download is read whole from SINTRAN
 through libcosmos' COSMOS file client into PSRAM (at most 1 MB) and sent to the client as it
 arrives. A file SINTRAN refuses gives `550` with SINTRAN's error number.
+
+A folder listing walks SINTRAN's directory one file at a time: 253 files took 60 s
+(2026-11-11). Each version of a file is its own entry and the version number is not in it, so a
+name can appear more than once. The size is SINTRAN's byte count (0 for a device file); the date
+is the last write, else the creation, in SINTRAN's own time (it keeps no time zone). `SIZE` and
+`MDTM` ask SINTRAN for that one file. `NLST CHAT*` lists the files whose FTP name matches the
+pattern.
 
 An admin sets each gateway user's SINTRAN account on the `XMSGGW>` command line:
 
@@ -107,19 +114,46 @@ The SINTRAN password has to be sent to SINTRAN, so it is stored on the board as 
 hashed. FTP itself sends the gateway password in clear, as telnet does.
 
 Not built yet:
-- listing files, file size and date (`SIZE`, `MDTM` answer `502`), writing, deleting and
-  renaming files: they need listing and file statistics in libcosmos;
+- writing, deleting and renaming files;
 - showing only the machines that are online now: today `/` lists every machine the host knows by
   name.
-
-Because listing is missing, clients that list a folder before they download (WinSCP) cannot
-download yet.
 
 Tested 2026-11-11: downloads of 255, 5035 and 6835 bytes came back at the sizes SINTRAN's
 FILE-STATISTICS gives, with curl (passive and active), tnftp (passive) and Windows `ftp.exe`
 (active), from D100 and from D102 through D100. A missing file is refused with SINTRAN error 46.
 One curl active-mode download failed once ("server failed to connect to data port") and did not
-fail again in five more tries; the cause is not known.
+fail again in five more tries; the cause is not known. Listing tested with curl, WinSCP
+(`ls`, `get`), tnftp (`nlist CHAT*`) and Windows `ftp.exe` (`dir`).
+
+## Files on the console
+
+Three commands on the `XMSGGW>` console read files on the SINTRAN machines, written the way
+SINTRAN writes a file: `machine(user(password)).NAME:TYPE`. `HELP` shows them with examples.
+
+| Command | What it does |
+|---|---|
+| `LIST-FILES D100(SYSTEM)` | every file of SYSTEM on D100 |
+| `LIST-FILES D100(SYSTEM).:MODE` | every MODE file (SINTRAN does the matching) |
+| `FILE-STAT D100(SYSTEM).CHATKT:MODE` | the file's size, dates and use count, as SINTRAN's FILE-STATISTICS |
+| `COPY-TERM D100(SYSTEM).LOAD-MODE:MODE` | the file shown on the console, bit 7 cleared |
+
+Leave out the password and the stored one is used for your own SINTRAN user; leave out the user
+and your SINTRAN account (the `SINTRAN` command) is used. Spaces work too:
+`LIST-FILES D100 SYSTEM :SYMB`. One file command runs at a time on the gateway; another user
+is told to try again.
+
+The escape key stops the output and brings the prompt back at once, but the gateway goes on
+reading from SINTRAN until the listing or file has ended (up to a minute for a big folder), and
+until then a new file command is told to try again. Stopping SINTRAN early needs a stop call in
+libcosmos' file client, asked for 2026-11-11.
+
+Not shown yet: the file number and version (`;1`) SINTRAN prints, which are not in the entry the
+file client hands over, and the access lines (`PUBLIC ACCESS : READ`...), shown as the raw access
+word because its bits are not decoded yet.
+
+Tested 2026-11-11: LIST-FILES with no filter, `:MODE` (18 files) and `:SYMB` (17), on D100 and on
+D102 through D100; FILE-STAT for one file and for `:MODE`, its lines matching SINTRAN's own for the
+same files; COPY-TERM of LOAD-MODE:MODE; a missing file; escape during a running command.
 
 ## USB console
 

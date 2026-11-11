@@ -1,5 +1,5 @@
 /**************************************************************************
-** FILE_FETCH - read one SINTRAN file for the FTP server                 **
+** FILE_FETCH - SINTRAN file jobs for the FTP server                     **
 **                                                                       **
 ** Ronny Hansen                                                          **
 ** SPDX-License-Identifier: MIT  Copyright (c) 2026 Ronny Hansen         **
@@ -17,8 +17,16 @@
 #include "console_out.h"
 #include "sintran_accounts.h"
 
+/** What a job does. */
+typedef enum
+{
+    JOB_READ = 0,   /**< fa_client_read */
+    JOB_LIST        /**< fa_client_list */
+} job_kind;
+
 static FaClient *s_client = NULL;   /* PSRAM; node task only once started */
 static uint8_t *s_buf = NULL;       /* FILE_FETCH_MAX, PSRAM */
+static FaFileEntry *s_list = NULL;  /* FILE_FETCH_LIST_MAX, PSRAM */
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
 /* Shared between the tasks, under s_mux. */
@@ -26,10 +34,11 @@ static file_fetch_status s_st;
 static bool s_abandoned = false;    /* the FTP side let go while the client still ran */
 
 /* The request, written by the FTP side while IDLE, read by the node task once ASKED. */
+static job_kind s_kind = JOB_READ;
 static uint16_t s_system = 0;
 static char s_user[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
 static char s_password[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
-static char s_spec[FA_CLIENT_SPEC];
+static char s_spec[FA_CLIENT_SPEC];  /* the file (read) or the filter (list) */
 
 int file_fetch_init(void)
 {
@@ -41,8 +50,13 @@ int file_fetch_init(void)
     {
         s_buf = (uint8_t *)heap_caps_malloc(FILE_FETCH_MAX, MALLOC_CAP_SPIRAM);
     }
+    if (s_list == NULL)
+    {
+        s_list = (FaFileEntry *)heap_caps_calloc(FILE_FETCH_LIST_MAX, sizeof(FaFileEntry),
+                                                 MALLOC_CAP_SPIRAM);
+    }
     memset(&s_st, 0, sizeof s_st);
-    return (s_client != NULL && s_buf != NULL) ? 0 : -1;
+    return (s_client != NULL && s_buf != NULL && s_list != NULL) ? 0 : -1;
 }
 
 /* ------------------------------------------------- client callbacks (node task) */
@@ -75,6 +89,35 @@ static void cb_data(void *ctx, uint32_t offset, const uint8_t *bytes, size_t n)
     portEXIT_CRITICAL(&s_mux);
 }
 
+static void cb_directory(void *ctx, const char *directory, const char *user)
+{
+    (void)ctx;
+    console_out_log(CONTROL_FRAME_LOG_INFO, "FTP list: directory %s, user %s", directory, user);
+}
+
+static void cb_entry(void *ctx, const FaFileEntry *e)
+{
+    (void)ctx;
+    if (s_abandoned)
+    {
+        return;
+    }
+    /* Only the node task writes entries and the count; the entry is copied in before the
+     * count that makes it visible goes up. */
+    uint32_t n = s_st.entries;
+    if (n >= FILE_FETCH_LIST_MAX)
+    {
+        portENTER_CRITICAL(&s_mux);
+        s_st.list_full = true;
+        portEXIT_CRITICAL(&s_mux);
+        return;
+    }
+    s_list[n] = *e;
+    portENTER_CRITICAL(&s_mux);
+    s_st.entries = n + 1u;
+    portEXIT_CRITICAL(&s_mux);
+}
+
 static void cb_done(void *ctx, int result, uint16_t sintran_error)
 {
     (void)ctx;
@@ -91,13 +134,14 @@ static void cb_done(void *ctx, int result, uint16_t sintran_error)
         s_st.state = (result == 0 && !s_st.too_long) ? FILE_FETCH_DONE : FILE_FETCH_FAILED;
     }
     portEXIT_CRITICAL(&s_mux);
-    console_out_log(CONTROL_FRAME_LOG_INFO, "FTP fetch: %s ended, result %d, SINTRAN error %u", s_spec,
-                    result, (unsigned)sintran_error);
+    console_out_log(CONTROL_FRAME_LOG_INFO, "FTP %s: %s ended, result %d, SINTRAN error %u",
+                    (s_kind == JOB_LIST) ? "list" : "fetch", s_spec, result, (unsigned)sintran_error);
 }
 
 /* ------------------------------------------------------------ FTP side */
 
-int file_fetch_start(uint16_t system, const char *user, const char *password, const char *spec)
+static int job_start(job_kind kind, uint16_t system, const char *user, const char *password,
+                     const char *spec)
 {
     if (s_client == NULL || strlen(user) >= sizeof s_user || strlen(password) >= sizeof s_password
         || strlen(spec) >= sizeof s_spec)
@@ -105,7 +149,7 @@ int file_fetch_start(uint16_t system, const char *user, const char *password, co
         return -1;
     }
     portENTER_CRITICAL(&s_mux);
-    /* A finished fetch the FTP side has not released counts as free; one still asked or
+    /* A finished job the FTP side has not released counts as free; one still asked or
      * running (or abandoned and not yet over) does not. */
     bool idle = (s_st.state == FILE_FETCH_IDLE || s_st.state == FILE_FETCH_DONE
                  || s_st.state == FILE_FETCH_FAILED) && !s_abandoned;
@@ -114,6 +158,7 @@ int file_fetch_start(uint16_t system, const char *user, const char *password, co
     {
         return -1;
     }
+    s_kind = kind;
     s_system = system;
     (void)snprintf(s_user, sizeof s_user, "%s", user);
     (void)snprintf(s_password, sizeof s_password, "%s", password);
@@ -123,6 +168,16 @@ int file_fetch_start(uint16_t system, const char *user, const char *password, co
     s_st.state = FILE_FETCH_ASKED;   /* the request fields are complete before this is seen */
     portEXIT_CRITICAL(&s_mux);
     return 0;
+}
+
+int file_fetch_start(uint16_t system, const char *user, const char *password, const char *spec)
+{
+    return job_start(JOB_READ, system, user, password, spec);
+}
+
+int file_fetch_list(uint16_t system, const char *user, const char *password, const char *filter)
+{
+    return job_start(JOB_LIST, system, user, password, filter);
 }
 
 void file_fetch_get(file_fetch_status *out)
@@ -147,6 +202,24 @@ size_t file_fetch_copy(uint32_t offset, uint8_t *out, size_t max)
         n = max;
     }
     memcpy(out, &s_buf[offset], n);
+    return n;
+}
+
+size_t file_fetch_entries(uint32_t from, FaFileEntry *out, size_t max)
+{
+    portENTER_CRITICAL(&s_mux);
+    uint32_t have = s_st.entries;
+    portEXIT_CRITICAL(&s_mux);
+    if (from >= have)
+    {
+        return 0;
+    }
+    size_t n = (size_t)(have - from);
+    if (n > max)
+    {
+        n = max;
+    }
+    memcpy(out, &s_list[from], n * sizeof *out);
     return n;
 }
 
@@ -178,16 +251,18 @@ void file_fetch_pass(XmsgNode *node, uint32_t now)
         return;
     }
     FaClientConfig cfg;
-    FaClientCallbacks cb = { NULL, cb_opened, cb_data, cb_done };
+    FaClientCallbacks cb = { NULL, cb_opened, cb_data, cb_done, cb_directory, cb_entry };
     fa_client_config_default(&cfg);
     int rc = fa_client_init(s_client, &cfg, &cb);
     /* The machine's number goes in as both the node and the system: the request is
      * addressed to that machine, and the host relays it there, as SINTRAN's own
-     * LIST-NAMES does (gw_console.cpp svc_names, captured 2026-11-10). Verified for the
-     * name table; for file access it is verified only against D100, the host itself. */
+     * LIST-NAMES does (gw_console.cpp svc_names, captured 2026-11-10). Verified for file
+     * reads from D100 itself and from D102 through D100 (2026-11-11). */
     if (rc == XMSG_OK)
     {
-        rc = fa_client_read(s_client, node, s_system, s_system, s_user, s_user, s_password, s_spec, now);
+        rc = (s_kind == JOB_LIST)
+                 ? fa_client_list(s_client, node, s_system, s_system, s_user, s_user, s_password, s_spec, now)
+                 : fa_client_read(s_client, node, s_system, s_system, s_user, s_user, s_password, s_spec, now);
     }
     memset(s_password, 0, sizeof s_password);   /* the client keeps only its fold */
     portENTER_CRITICAL(&s_mux);
@@ -206,8 +281,8 @@ void file_fetch_pass(XmsgNode *node, uint32_t now)
         s_st.result = rc;
     }
     portEXIT_CRITICAL(&s_mux);
-    console_out_log(CONTROL_FRAME_LOG_INFO, "FTP fetch: %s from system %u as %s: start %d", s_spec,
-                    (unsigned)s_system, s_user, rc);
+    console_out_log(CONTROL_FRAME_LOG_INFO, "FTP %s: \"%s\" on system %u as %s: start %d",
+                    (s_kind == JOB_LIST) ? "list" : "fetch", s_spec, (unsigned)s_system, s_user, rc);
 }
 
 void file_fetch_reason(const file_fetch_status *st, char *out, size_t cap)

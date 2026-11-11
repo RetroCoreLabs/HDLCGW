@@ -1,5 +1,5 @@
 /**************************************************************************
-** FTP_SERVER - FTP into the SINTRAN machines (skeleton)                 **
+** FTP_SERVER - FTP into the SINTRAN machines                            **
 **                                                                       **
 ** Ronny's design (2026-11-11). An FTP client logs in with a gateway     **
 ** user (users.h, the same users as telnet). The folders are:            **
@@ -8,12 +8,12 @@
 **                         (names.h), without this gateway itself         **
 **   /<machine>            one folder: the gateway user's SINTRAN user    **
 **                         (sintran_accounts.h)                           **
-**   /<machine>/<user>     that user's files - NOT BUILT YET: it needs    **
-**                         libxmsg's COSMOS file client                   **
+**   /<machine>/<user>     that user's files: RETR works (file_fetch.h, **
+**                         libcosmos' COSMOS file client); listing them  **
+**                         is not built yet                              **
 **                                                                       **
-** What works now: login, PWD, CWD/CDUP over the two folder levels,      **
-** passive mode (PASV, EPSV) and LIST/NLST of the two folder levels.     **
-** Listing or moving files is refused with "550 ... not built yet".      **
+** Passive mode (PASV, EPSV) and active mode (PORT, EPRT, only back to   **
+** the client's own address).                                            **
 **                                                                       **
 ** Not built yet either: showing only the machines that are online right **
 ** now (Ronny wants that, like CONNECT-TO's LIST-SYSTEMS). How to ask    **
@@ -47,7 +47,7 @@
 /** A control connection with no command for this long is closed (RFC 959 leaves it open). */
 #define FTP_SERVER_IDLE_MS (5u * 60u * 1000u)
 
-/** How long a LIST waits for the client to open the data connection. */
+/** How long a LIST or RETR waits for the client to open the data connection. */
 #define FTP_SERVER_DATA_WAIT_MS 10000u
 
 /** @brief Work buffers (PSRAM). Once, from setup(). @return 0 or -1. */
@@ -70,6 +70,7 @@ typedef struct
     uint32_t logins;        /**< good logins */
     uint32_t bad_logins;    /**< wrong user or password */
     uint32_t listings;      /**< LIST/NLST sent */
+    uint32_t files;         /**< files sent (RETR) */
     bool user_on;           /**< an FTP user is connected now */
 } ftp_server_stats;
 

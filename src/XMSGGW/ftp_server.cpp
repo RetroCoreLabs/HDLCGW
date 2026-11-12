@@ -195,10 +195,43 @@ int ftp_server_init(void)
     return (s_listing != NULL && s_names != NULL && s_chunk != NULL && s_job != NULL && s_up != NULL) ? 0 : -1;
 }
 
+/* Who is on, for INFO. INFO runs in the node task (the console), the server in the telnet
+ * task, so the server writes this copy under the lock and INFO only copies it out. */
+static portMUX_TYPE s_who_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool s_who_on = false;
+static char s_who_user[sizeof(((ftp_server_stats *)0)->user)];
+static char s_who_remote[sizeof(((ftp_server_stats *)0)->remote)];
+static uint32_t s_who_since_ms = 0;
+
+/** @brief Telnet task: record who is on (on false: nobody; user "" before login). */
+static void who_set(bool on, const char *user, const char *remote, uint32_t since_ms)
+{
+    portENTER_CRITICAL(&s_who_mux);
+    s_who_on = on;
+    (void)snprintf(s_who_user, sizeof s_who_user, "%s", (user != NULL) ? user : "");
+    if (remote != NULL)
+    {
+        (void)snprintf(s_who_remote, sizeof s_who_remote, "%s", remote);
+        s_who_since_ms = since_ms;
+    }
+    portEXIT_CRITICAL(&s_who_mux);
+}
+
 void ftp_server_get_stats(ftp_server_stats *out)
 {
-    *out = s_stats;
-    out->user_on = s_on;
+    portENTER_CRITICAL(&s_who_mux);
+    *out = s_stats;   /* counters: written by the telnet task only, read here as a copy */
+    out->user_on = s_who_on;
+    memcpy(out->user, s_who_user, sizeof out->user);
+    memcpy(out->remote, s_who_remote, sizeof out->remote);
+    uint32_t since = s_who_since_ms;
+    portEXIT_CRITICAL(&s_who_mux);
+    out->on_ms = out->user_on ? (millis() - since) : 0u;
+    if (!out->user_on)
+    {
+        out->user[0] = '\0';
+        out->remote[0] = '\0';
+    }
 }
 
 /** @brief Send one reply line, CR LF added. */
@@ -281,6 +314,7 @@ static void session_end(const char *why)
     }
     s_on = false;
     s_logged_in = false;
+    who_set(false, NULL, NULL, 0);
     s_bad_logins = 0;
     memset(s_user_name, 0, sizeof s_user_name);
     s_line_len = 0;
@@ -1300,6 +1334,7 @@ static void cmd_pass(const char *password)
         return;
     }
     s_logged_in = true;
+    who_set(true, s_user_name, NULL, 0);
     s_stats.logins++;
     memset(&s_cwd, 0, sizeof s_cwd);
     s_type_ascii = true;
@@ -1348,6 +1383,7 @@ static void command(const char *line)
     if (is_cmd(line, "USER", &a))
     {
         s_logged_in = false;
+        who_set(true, "", NULL, 0);
         if (!auth_name_is_valid(a))
         {
             reply("530 Not a valid user name.");
@@ -1641,6 +1677,7 @@ void ftp_server_pass(uint32_t now)
             s_ctrl.setNoDelay(true);
             s_on = true;
             s_last_ms = now;
+            who_set(true, "", s_ctrl.remoteIP().toString().c_str(), now);
             s_stats.sessions++;
             console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: connection from %s",
                             s_ctrl.remoteIP().toString().c_str());

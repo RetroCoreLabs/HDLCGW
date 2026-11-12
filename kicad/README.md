@@ -65,6 +65,15 @@ the ND on 3 (+) and 15 (-); clock into the ND on 18 (+) and 6 (-); ground on 8.
   TP4 = U2 RO (clock in): the 3.3 V logic side of the chips. TP5 and TP6 = ground, TP7 = 3V3.
 - Plug pins 1, 7, 9, 12, 13, 19, 20, 21, 25 are not connected (verified from the exported netlist).
 - The WEMOS 5V pin is not used. No level shifter: the MAX3490E runs on 3.3 V.
+- Firmware select (added 2026-11-12, for the two firmwares in one board): push button SW1 from GPIO5
+  to GND, no resistor: the firmware turns on GPIO5's internal pull-up, so not pressed reads high and
+  pressed reads low. GPIO5 is not a strapping pin (on the ESP32-S2 those are GPIO0, 45 and 46,
+  datasheet section 3), so holding the button at power-on does not change how the chip boots.
+- Two LEDs show which firmware runs, lit when the pin is high: D1 green on GPIO3 (HDLCGW),
+  D2 red on GPIO1 (XMSGGW), each through 330 ohm (R1, R2) to GND. About 4 mA at 3.3 V for a
+  2 V LED. A pure-green LED (about 3 V) would be dim at this value; use a classic yellow-green
+  one or a smaller resistor. Nets verified from the exported netlist.
+- In the WEMOS symbol, IO1, IO3 and IO5 were changed from "not connected" to bidirectional pins.
 
 ## MAX3490E (verified from the datasheet, not from a web summary)
 
@@ -79,7 +88,8 @@ the ND on 3 (+) and 15 (-); clock into the ND on 18 (+) and 6 (-); ground on 8.
 - Pad grid 2.54 mm pitch, 8 rows, four columns. Columns at x = 0, 2.54, 20.32, 22.86 mm.
 - Board about 25.4 x 34.3 mm. The footprint outline in KiCad is copied from the C3 mini and is not
   confirmed (todo item 2).
-- Pins used: GPIO 7, 9, 11, 12, 3V3, GND.
+- Pins used: GPIO 7, 9, 11, 12 (the line), GPIO 1, 3, 5 (firmware LEDs and button), 3V3, GND.
+  The WEMOS board's own LED is on GPIO15.
 
 ## The cable that confused the measurements
 

@@ -9,6 +9,8 @@
 ** client (file_job_pass_all), and what SINTRAN sends lands in two rings  **
 ** the front end takes from while it arrives:                            **
 **  - read one file (fa_client_read): its bytes;                         **
+**  - write one file (fa_client_write): from bytes the front end holds  **
+**    until the job is over (a resent frame asks for them again);        **
 **  - list a user's files (fa_client_list, the walk SINTRAN's LIST-FILES **
 **    and FILE-STATISTICS both use): one entry per file. With a filter   **
 **    "NAME:TYPE" SINTRAN matches it itself (libxmsg, 2026-11-11).       **
@@ -82,6 +84,20 @@ FileJob *file_job_create(const char *name, size_t data_cap, size_t entry_cap);
  */
 int file_job_start(FileJob *job, bool list, uint16_t system, const char *user, const char *password,
                    const char *spec);
+
+/**
+ * @brief Ask to write a file. Any task.
+ * @param job       The job.
+ * @param system    The SINTRAN machine's system number.
+ * @param user      SINTRAN user: whose directory, and who asks.
+ * @param password  That user's password ("" for none). Wiped once the client has it.
+ * @param spec      "NAME:TYPE". SINTRAN creates it when it does not exist.
+ * @param bytes     The whole file. It must stay unchanged until the job is IDLE or ENDED.
+ * @param length    Its length; 1 or more (libcosmos refuses an empty file).
+ * @return As file_job_start().
+ */
+int file_job_start_write(FileJob *job, uint16_t system, const char *user, const char *password,
+                         const char *spec, const uint8_t *bytes, uint32_t length);
 
 /** @brief Read the state. Any task. */
 void file_job_get(FileJob *job, file_job_status *out);

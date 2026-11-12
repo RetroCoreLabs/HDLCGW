@@ -89,23 +89,55 @@ with a gateway user, the same ones as telnet. The folders:
 |---|---|
 | `/` | the machines, by the names read from the host (D100, D102, ...), without this gateway |
 | `/D100` | one folder: the SINTRAN user set for your gateway user |
-| `/D100/SYSTEM` | that user's files, with size and date; download them (`RETR`) |
+| `/D100/SYSTEM` | that user's files, with size and date; download (`RETR`) and upload (`STOR`) |
 
 A SINTRAN file `NAME:TYPE` is named `NAME.TYPE` in FTP. A download is read from SINTRAN
 through libcosmos' COSMOS file client and sent to the client as it arrives, through a 256 KB
 buffer in PSRAM; there is no size limit. A file SINTRAN refuses gives `550` with SINTRAN's error number.
 
-`TYPE A` (ASCII, the start value) clears bit 7 of every byte, the parity bit SINTRAN text files
-carry. `TYPE I` (binary) sends the file unchanged. Neither changes line ends: SINTRAN text already
-ends its lines with CR LF. Uploads are not built yet: the COSMOS file client in libxmsg can read
-and list files but not write them.
+An upload (`STOR`) is taken whole into PSRAM (at most 1 MB) and then written to SINTRAN as a new
+file under the folder's SINTRAN user. SINTRAN refuses to write over a file that exists (error 62,
+octal 76, tested 2026-11-12) and keeps the old one; an empty file is refused, because no capture
+shows how SINTRAN writes one.
+
+`TYPE A` (ASCII, the start value) clears bit 7 of every byte on the way out, and sets it to even
+parity on the way in, which is how SINTRAN keeps text (all 4780 bytes of STARTX3:MODE on D100 have
+even parity). `TYPE I` (binary) moves the bytes unchanged both ways. Neither changes line ends:
+SINTRAN text already ends its lines with CR LF.
 
 A folder listing walks SINTRAN's directory one file at a time: 253 files took 60 s
-(2026-11-11). Each version of a file is its own entry and the version number is not in it, so a
-name can appear more than once. The size is SINTRAN's byte count (0 for a device file); the date
-is the last write, else the creation, in SINTRAN's own time (it keeps no time zone). `SIZE` and
-`MDTM` ask SINTRAN for that one file. `NLST CHAT*` lists the files whose FTP name matches the
-pattern.
+(2026-11-11). Each version of a file is its own entry, so a name can appear more than once. `ls`
+(NLST) gives the names, `dir` (LIST) the long form, as on SINTRAN's own FTP server. The long form
+is `ls -l` lines, because graphical FTP programs read only that, with SINTRAN's facts in them:
+
+```
+-rw-rw-r--    3 SYSTEM   rwacdrwacdr----       4780 Aug 25  1998 STARTX3.MODE
+```
+
+The permission bits are the own, friend and public read and write rights; the number after them
+is the page count; then SINTRAN's full user name, the access letters (own, friend, public, each
+`rwacd`), the byte count (0 for a device file), and the date: the last write, else the creation,
+in SINTRAN's own time (it keeps no time zone).
+
+What SINTRAN's own FTP server (TCP/IP C07, 1990) does, and the gateway copies:
+
+| Command | What it does |
+|---|---|
+| `LIST ECHO` | the files whose name starts so; SINTRAN does the matching, as for LIST-FILES |
+| `CONV` (or `SITE CONV`) | names as SINTRAN writes them, `NAME:TYPE;1`, and back to `NAME.TYPE` |
+| `SITE TABLE` | LIST prints SINTRAN's own table, and back to `ls -l` |
+| `HELP` | the commands |
+
+SINTRAN's table, as its own server prints it:
+
+```
+(PACK-ONE:SYSTEM)
+ no. own  fri  pub    pgs    bytes  last modified    name
+ 73 rwacdrwacdr----     4     7471  27 Sep 98 18:14 ECHOPL:PLNC;1
+```
+
+`SIZE` and `MDTM` ask SINTRAN for that one file. `NLST CHAT*` lists the files whose name matches
+the pattern; the gateway matches that one itself.
 
 An admin sets each gateway user's SINTRAN account on the `XMSGGW>` command line:
 
@@ -119,7 +151,7 @@ The SINTRAN password has to be sent to SINTRAN, so it is stored on the board as 
 hashed. FTP itself sends the gateway password in clear, as telnet does.
 
 Not built yet:
-- writing, deleting and renaming files;
+- writing over a file, appending, deleting and renaming files;
 - showing only the machines that are online now: today `/` lists every machine the host knows by
   name.
 

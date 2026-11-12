@@ -17,6 +17,7 @@
 #include <esp_heap_caps.h>
 
 #include <libcosmos/fa/fa_client.h>
+#include <libcosmos/fa/fa_text.h>
 
 #include "console_out.h"
 #include "file_job.h"
@@ -381,21 +382,6 @@ void file_console_cancel(int place)
 
 /* --------------------------------------------------------------- output */
 
-static const char *const MONTHS[12] = { "JANUARY", "FEBRUARY", "MARCH",     "APRIL",   "MAY",      "JUNE",
-                                        "JULY",    "AUGUST",   "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER" };
-
-/** @brief " 07.49.55  JULY 28, 1998" as SINTRAN prints a date (Ronny's sample, 2026-11-11). */
-static int date_text(uint32_t raw, char *out, size_t cap)
-{
-    FaNdDate d;
-    if (!fa_nd_date_split(raw, &d) || d.month < 1u || d.month > 12u)
-    {
-        return -1;
-    }
-    return snprintf(out, cap, "%02u.%02u.%02u  %s %u, %u", (unsigned)d.hour, (unsigned)d.minute,
-                    (unsigned)d.second, MONTHS[d.month - 1u], (unsigned)d.day, (unsigned)d.year);
-}
-
 /** @brief Append to s_pend. */
 static void pend_add(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void pend_add(const char *fmt, ...)
@@ -410,44 +396,32 @@ static void pend_add(const char *fmt, ...)
     }
 }
 
-/**
- * @brief One access group as SINTRAN's FILE-STATISTICS prints it, for example
- *        "FRIEND ACCESS : READ, WRITE, APPEND, COMMON, DIRECTORY", or NONE when the group
- *        grants nothing. Inside a group R is bit 0, W bit 1, A bit 2, C bit 3, D bit 4.
- *        The words were read off D100's own FILE-STAT of STARTX3:MODE (access 003777),
- *        2026-11-11; NONE is from a SINTRAN printout quoted in RetroIO's tests.
- */
-static void access_line(const char *group, unsigned bits)
+/** @brief One access group as SINTRAN's FILE-STATISTICS prints it (libcosmos fa_text). */
+static void access_line(const char *group, uint16_t access, unsigned shift)
 {
-    static const char *const names[5] = { "READ", "WRITE", "APPEND", "COMMON", "DIRECTORY" };
-    char text[64];
-    size_t len = 0;
-    text[0] = '\0';
-    for (unsigned i = 0; i < 5u; i++)
+    char words[FA_TEXT_ACCESS_WORDS];
+    if (fa_text_access_words(access, shift, words, sizeof words) > 0)
     {
-        if ((bits & (1u << i)) != 0u)
-        {
-            int n = snprintf(&text[len], sizeof text - len, "%s%s", (len > 0u) ? ", " : "", names[i]);
-            if (n > 0)
-            {
-                len += (size_t)n;
-            }
-        }
+        pend_add("           %s ACCESS : %s\r\n", group, words);
     }
-    pend_add("           %s ACCESS : %s\r\n", group, (len > 0u) ? text : "NONE");
 }
 
 /**
- * @brief One file as SINTRAN shows it. The version (";1") and the file number SINTRAN
- *        prints are not in the entry libcosmos hands over (libxmsg, 2026-11-11), so they are
- *        left out.
+ * @brief One file as SINTRAN shows it: "FILE 215 : D100.(PACK-ONE:SYSTEM)STARTX3:MODE;1".
+ *        The number is the file's slot in the user's directory (libcosmos object_index);
+ *        the version is left out when libcosmos cannot tell it (a file with more versions).
  */
 static void entry_text(const FaFileEntry *e)
 {
     char date[48];
-    pend_add("FILE : %s.(%s:%s)%s:%s\r\n", s_machine, (s_st.directory[0] != '\0') ? s_st.directory : "?",
-             (s_st.user[0] != '\0') ? s_st.user : s_user, e->name,
-             e->type);
+    char name[FA_TEXT_NAME];
+    if (fa_text_name(e, FA_NAME_SINTRAN_VERSION, name, sizeof name) < 0)
+    {
+        (void)fa_text_name(e, FA_NAME_SINTRAN, name, sizeof name);
+    }
+    pend_add("FILE %u : %s.(%s:%s)%s\r\n", (unsigned)e->object_index, s_machine,
+             (s_st.directory[0] != '\0') ? s_st.directory : "?", (s_st.user[0] != '\0') ? s_st.user : s_user,
+             name);
     if (s_kind != CMD_STAT)
     {
         return;
@@ -463,19 +437,19 @@ static void entry_text(const FaFileEntry *e)
     /* The access word holds three groups of five bits: PUBLIC in bits 10-14, FRIEND in
      * 5-9, OWN in 0-4 (RetroIO SintranAccessForm, from the SINTRAN reference manual
      * @SET-FILE-ACCESS). SINTRAN prints them in that order. */
-    access_line("PUBLIC", (unsigned)(e->access >> 10));
-    access_line("FRIEND", (unsigned)(e->access >> 5));
-    access_line("OWN", (unsigned)e->access);
+    access_line("PUBLIC", e->access, FA_ACCESS_PUBLIC_SHIFT);
+    access_line("FRIEND", e->access, FA_ACCESS_FRIEND_SHIFT);
+    access_line("OWN", e->access, FA_ACCESS_OWN_SHIFT);
     pend_add("           OPENED %u TIME%s\r\n", (unsigned)e->open_total, (e->open_total == 1u) ? "" : "S");
-    if (date_text(e->created, date, sizeof date) > 0)
+    if (fa_text_date_stat(e->created, date, sizeof date) > 0)
     {
         pend_add("           CREATED %s\r\n", date);
     }
-    if (date_text(e->last_read, date, sizeof date) > 0)
+    if (fa_text_date_stat(e->last_read, date, sizeof date) > 0)
     {
         pend_add("           OPENED FOR READ %s\r\n", date);
     }
-    if (date_text(e->last_write, date, sizeof date) > 0)
+    if (fa_text_date_stat(e->last_write, date, sizeof date) > 0)
     {
         pend_add("           OPENED FOR WRITE %s\r\n", date);
     }

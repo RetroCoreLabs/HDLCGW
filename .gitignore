@@ -8,3 +8,4 @@ Backup-*.zip
 *.kicad_prl
 build-site/
 __pycache__/
+src/HDLCGW/CLAUDE.md

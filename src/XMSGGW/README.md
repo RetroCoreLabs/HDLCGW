@@ -291,7 +291,9 @@ cable is the administrator.
 | `LINK START\|STOP` | start the link or take it down |
 | `REACH` | ask the peer "are you there?"; `STAT` shows asked / answered |
 | `TERM CONNECT <system>\|TYPE <text>\|SHOW\|STATUS\|HANGUP` | a terminal session from the console |
-| `WIFI [STATUS]\|SSID <name>\|PASS <password>\|CONNECT` | the network for telnet; the password is never shown |
+| `WIFI [STATUS]\|SSID <name>\|PASS <password>\|CONNECT` | the network for telnet |
+| `WIFI SCAN` | list the networks the board can see (about 3 s, 2.4 GHz only) |
+| `WIFI SHOW` | show the stored network name and password; USB console only (telnet has no WIFI command) |
 | `TTYP [n]` | terminal type for new sessions (0 default; 93 = TDV 2200) |
 | `PARITY [ON\|OFF]` | even parity on typed bytes for new sessions (ON default) |
 | `ALIAS [<name> <system number>\|DEL <name>]` | names `CONNECT` takes, besides the ones learned from the host |

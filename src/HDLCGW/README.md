@@ -206,6 +206,7 @@ name and passphrase are shared with XMSGGW: set them in either firmware. `BAUD` 
 |---|---|
 | `WIFI` or `WIFI STATUS` | Connection state, SSID, IP address, signal, host name, last disconnect reason; then the TCP mode and MIRROR |
 | `WIFI SCAN` | List the networks the board can see, about 3 s, 2.4 GHz only |
+| `WIFI SHOW` | Show the stored network name and password (USB console only: commands do not run over TCP) |
 | `WIFI SSID <name>` | Store the network name (up to 32 characters, spaces allowed) |
 | `WIFI PASS <pass>` | Store the passphrase (up to 64; empty for an open network) |
 | `WIFI ON` | Turn WiFi on: connect now and after every reset |

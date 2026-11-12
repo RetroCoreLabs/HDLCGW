@@ -177,6 +177,9 @@ void wifi_task_print_status(void);
  */
 void wifi_task_scan(void);
 
+/** @brief WIFI SHOW: the stored network name and password (USB console only). */
+void wifi_task_show(void);
+
 /**
  * @brief TCP DEBUG: print the peer socket's state as lwIP and this task see
  *        it (bytes lwIP holds for us, socket error, our buffers, last read).

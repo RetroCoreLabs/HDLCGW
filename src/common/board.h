@@ -128,6 +128,22 @@ int board_set_wifi_pass(const char *pass);
  */
 bool board_no_wifi(void);
 
+/**
+ * @brief WIFI SCAN in both firmwares: list the networks the board can see.
+ *        Blocks about 3 s (the radio listens on every channel; 2.4 GHz only).
+ *        Turns the radio on as a station first when it is off.
+ * @param[in] print  Prints text on the console, as typed.
+ */
+void board_wifi_scan(void (*print)(const char *text));
+
+/**
+ * @brief WIFI SHOW in both firmwares: the stored network name AND password.
+ *        Ronny, 2026-11-12: shown on the USB console only. Both firmwares run
+ *        WIFI commands only from the USB console; never call this from telnet.
+ * @param[in] print  Prints text on the console, as typed.
+ */
+void board_wifi_show(void (*print)(const char *text));
+
 /** @brief Forget the WiFi network name and password (and a NONE answer). @return 0 or -1. */
 int board_clear_wifi(void);
 

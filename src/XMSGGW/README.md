@@ -122,16 +122,21 @@ is the page count; then SINTRAN's full user name, the access letters (own, frien
 `rwacd`), the byte count (0 for a device file), and the date: the last write, else the creation,
 in SINTRAN's own time (it keeps no time zone).
 
-What SINTRAN's own FTP server (TCP/IP C07, 1990) does, and the gateway copies:
+What SINTRAN's own FTP server (TCP/IP C07, 1990) does, and the gateway copies, plus one switch
+of the gateway's own:
 
 | Command | What it does |
 |---|---|
 | `LIST ECHO` | the files whose name starts so; SINTRAN does the matching, as for LIST-FILES |
-| `CONV` (or `SITE CONV`) | names as SINTRAN writes them, `NAME:TYPE;1`, and back to `NAME.TYPE` |
-| `SITE TABLE` | LIST prints SINTRAN's own table, and back to `ls -l` |
+| `CONV` | names as SINTRAN writes them, `NAME:TYPE;1`, and back to `NAME.TYPE`. SINTRAN's server has it; the gateway also takes `SITE CONV` |
+| `SITE TABLE` | the gateway's own: LIST prints SINTRAN's table (below) instead of `ls -l` lines, and back. SINTRAN's server always prints the table and knows no `SITE` |
 | `HELP` | the commands |
 
-SINTRAN's table, as its own server prints it:
+SINTRAN's own server cannot run a SINTRAN command over FTP: its program (`FTP-SERVER-C07:PROG`)
+only reads, writes, lists and deletes files, logs in and out, and switches `CONV` (checked on the
+program and on a live server, 2026-11-12). The gateway has no such command either.
+
+SINTRAN's table, as its own server prints it (the file number is 3 wide, `100` and ` 73`):
 
 ```
 (PACK-ONE:SYSTEM)
@@ -154,7 +159,7 @@ The SINTRAN password has to be sent to SINTRAN, so it is stored on the board as 
 hashed. FTP itself sends the gateway password in clear, as telnet does.
 
 Not built yet:
-- appending, deleting and renaming files;
+- deleting files (SINTRAN's own server has `DELE`), appending and renaming them (SINTRAN's server has neither);
 - showing only the machines that are online now: today `/` lists every machine the host knows by
   name.
 

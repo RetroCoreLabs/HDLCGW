@@ -567,7 +567,7 @@ static int dir_line(const FaFileEntry *e, char *out, size_t cap)
     {
         char date[FA_TEXT_DATE_FTP];
         (void)fa_text_date_ftp(dir_date(e), date, sizeof date);
-        return snprintf(out, cap, "%4u %s %5lu %8lu  %s %s\r\n", (unsigned)e->object_index, letters,
+        return snprintf(out, cap, "%3u %s %5lu %8lu  %s %s\r\n", (unsigned)e->object_index, letters,
                         (unsigned long)e->pages, bytes, date, name);
     }
     char perm[11];

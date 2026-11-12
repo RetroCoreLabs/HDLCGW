@@ -42,6 +42,8 @@ struct FileJob
 
     /* The request: written by the front end while IDLE, read by the node task once ASKED. */
     bool list;
+    const uint8_t *src;       /* write: the front end's bytes; NULL for read and list */
+    uint32_t src_len;
     uint16_t system;
     char user[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
     char password[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
@@ -83,6 +85,12 @@ FileJob *file_job_create(const char *name, size_t data_cap, size_t entry_cap)
     j->entry_cap = entry_cap;
     s_job_count++;
     return j;
+}
+
+/** @brief What a job does, for the log. */
+static const char *job_what(const FileJob *j)
+{
+    return (j->src != NULL) ? "write" : j->list ? "list" : "read";
 }
 
 /* ------------------------------------------------- client callbacks (node task) */
@@ -158,6 +166,19 @@ static void cb_entry(void *ctx, const FaFileEntry *e)
     portEXIT_CRITICAL(&j->mux);
 }
 
+/* Write: hand the client the bytes it asks for. It may ask for the same range again
+ * when a frame is resent, so the front end keeps them until the job is over. */
+static size_t cb_source(void *ctx, uint32_t offset, uint8_t *out, size_t n)
+{
+    FileJob *j = (FileJob *)ctx;
+    if (j->src == NULL || offset > j->src_len || n > (size_t)(j->src_len - offset))
+    {
+        return 0;   /* the client then ends with XMSG_EIO */
+    }
+    memcpy(out, &j->src[offset], n);
+    return n;
+}
+
 static void cb_done(void *ctx, int result, uint16_t sintran_error)
 {
     FileJob *j = (FileJob *)ctx;
@@ -168,13 +189,15 @@ static void cb_done(void *ctx, int result, uint16_t sintran_error)
     j->released = false;
     portEXIT_CRITICAL(&j->mux);
     console_out_log(CONTROL_FRAME_LOG_INFO, "%s file job: %s \"%s\" ended, result %d, SINTRAN error %u", j->name,
-                    j->list ? "list" : "read", j->spec, result, (unsigned)sintran_error);
+                    job_what(j), j->spec, result, (unsigned)sintran_error);
 }
 
 /* ------------------------------------------------------------ front end */
 
-int file_job_start(FileJob *job, bool list, uint16_t system, const char *user, const char *password,
-                   const char *spec)
+/* The request fields, the write source among them, are all set before the state says
+ * ASKED: the node task may start the job the moment it sees that. */
+static int job_start(FileJob *job, bool list, const uint8_t *src, uint32_t src_len, uint16_t system,
+                     const char *user, const char *password, const char *spec)
 {
     if (job == NULL || strlen(user) >= sizeof job->user || strlen(password) >= sizeof job->password
         || strlen(spec) >= sizeof job->spec)
@@ -189,6 +212,8 @@ int file_job_start(FileJob *job, bool list, uint16_t system, const char *user, c
         return -1;
     }
     job->list = list;
+    job->src = src;
+    job->src_len = src_len;
     job->system = system;
     (void)snprintf(job->user, sizeof job->user, "%s", user);
     (void)snprintf(job->password, sizeof job->password, "%s", password);
@@ -210,6 +235,22 @@ int file_job_start(FileJob *job, bool list, uint16_t system, const char *user, c
     job->state = FILE_JOB_ASKED;   /* the request fields are complete before this is seen */
     portEXIT_CRITICAL(&job->mux);
     return 0;
+}
+
+int file_job_start(FileJob *job, bool list, uint16_t system, const char *user, const char *password,
+                   const char *spec)
+{
+    return job_start(job, list, NULL, 0, system, user, password, spec);
+}
+
+int file_job_start_write(FileJob *job, uint16_t system, const char *user, const char *password,
+                         const char *spec, const uint8_t *bytes, uint32_t length)
+{
+    if (bytes == NULL || length == 0u)
+    {
+        return -1;
+    }
+    return job_start(job, false, bytes, length, system, user, password, spec);
 }
 
 void file_job_get(FileJob *job, file_job_status *out)
@@ -321,7 +362,7 @@ static void job_pass(FileJob *j, XmsgNode *node, uint32_t now)
         return;
     }
     FaClientConfig cfg;
-    FaClientCallbacks cb = { j, cb_opened, cb_data, cb_done, cb_directory, cb_entry };
+    FaClientCallbacks cb = { j, cb_opened, cb_data, cb_done, cb_directory, cb_entry, cb_source };
     fa_client_config_default(&cfg);
     int rc = fa_client_init(j->client, &cfg, &cb);
     /* The machine's number goes in as both the node and the system: the request is
@@ -330,12 +371,23 @@ static void job_pass(FileJob *j, XmsgNode *node, uint32_t now)
      * reads from D100 itself and from D102 through D100 (2026-11-11). */
     if (rc == XMSG_OK)
     {
-        rc = j->list ? fa_client_list(j->client, node, j->system, j->system, j->user, j->user, j->password, j->spec, now)
-                     : fa_client_read(j->client, node, j->system, j->system, j->user, j->user, j->password, j->spec, now);
+        if (j->src != NULL)
+        {
+            rc = fa_client_write(j->client, node, j->system, j->system, j->user, j->user, j->password, j->spec,
+                                 j->src_len, now);
+        }
+        else if (j->list)
+        {
+            rc = fa_client_list(j->client, node, j->system, j->system, j->user, j->user, j->password, j->spec, now);
+        }
+        else
+        {
+            rc = fa_client_read(j->client, node, j->system, j->system, j->user, j->user, j->password, j->spec, now);
+        }
     }
     memset(j->password, 0, sizeof j->password);   /* the client keeps only its fold */
     console_out_log(CONTROL_FRAME_LOG_INFO, "%s file job: %s \"%s\" on system %u as %s: start %d", j->name,
-                    j->list ? "list" : "read", j->spec, (unsigned)j->system, j->user, rc);
+                    job_what(j), j->spec, (unsigned)j->system, j->user, rc);
     portENTER_CRITICAL(&j->mux);
     if (rc == XMSG_OK)
     {
@@ -372,6 +424,10 @@ void file_job_reason(const file_job_status *st, char *out, size_t cap)
     else if (st->result == XMSG_ENOSPC)
     {
         (void)snprintf(out, cap, "the gateway has no free XMSG session");
+    }
+    else if (st->result == XMSG_EIO)
+    {
+        (void)snprintf(out, cap, "the gateway could not hand over the file's bytes");
     }
     else if (st->data_lost)
     {

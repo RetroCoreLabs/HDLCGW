@@ -8,6 +8,7 @@
 ** help text: F with no bytes sends a built-in test frame, STAT adds     **
 ** lines with the receiver's and the control-frame counters, CLOCK,      **
 ** RXDMA and LOG.                                                        **
+** HDLC and ECHO became DEBUG HDLC|ECHO ON|OFF (Ronny, 2026-11-12).      **
 **                                                                       **
 ** Output goes through console_out (console_out.h), never to Serial      **
 ** directly: the same handler answers a person in the DEBUG console and  **
@@ -32,6 +33,7 @@
 #include "libhdlc/esp32s2/spi_tx_task.h"
 #include "usb_tx_task.h"
 #include "wifi_task.h"
+#include "../common/board.h"
 
 /* Transmit clock range, same limits as RC422Dev's setTXBaudRate(). The
  * SPI master divides 80 MHz, so any value in the range is reachable within
@@ -47,11 +49,10 @@ static void handle_help(const char *args);
 static void handle_send(const char *args);
 static void handle_baud(const char *args);
 static void handle_loopback(const char *args);
-static void handle_echo(const char *args);
+static void handle_debug(const char *args);
 static void handle_dump(const char *args);
 static void handle_clear(const char *args);
 static void handle_send_debug(const char *args);
-static void handle_hdlc(const char *args);
 static void handle_frame(const char *args);
 static void handle_task(const char *args);
 static void handle_info(const char *args);
@@ -67,24 +68,25 @@ static void handle_log(const char *args);
 static void handle_wifi(const char *args);
 static void handle_tcp(const char *args);
 static void handle_mirror(const char *args);
+static void handle_firmware(const char *args);
 
 // clang-format off
 static const command COMMANDS[] =
 {
     { "HELP",      "HELP [WIFI] - All commands, or only the WiFi and TCP ones", handle_help },
     { "SEND",      "SEND <hex bytes> - Send raw bytes, no framing",          handle_send },
-    { "BAUD",      "BAUD <value>|MAX|DEFAULT - Set the transmit clock",      handle_baud },
+    { "BAUD",      "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored, shared with XMSGGW)", handle_baud },
     { "LOOPBACK",  "LOOPBACK ON|OFF - Enable or disable loopback mode",      handle_loopback },
-    { "ECHO",      "Echo received data to serial port",                      handle_echo },
+    { "DEBUG",     "DEBUG [HDLC|ECHO ON|OFF] - Frame decoding / line data on this console", handle_debug },
     { "DUMP",      "Dump received buffer",                                   handle_dump },
     { "CLEAR",     "Clear received buffer",                                  handle_clear },
     { ".",         ". [count] - Send debug data, bytes 0..count-1",          handle_send_debug },
-    { "HDLC",      "Toggle HDLC frame decoding of received data",            handle_hdlc },
     { "F",         "F <hex bytes> - Send HDLC frame, FCS added (F alone: test)", handle_frame },
     { "TASK",      "List running tasks",                                     handle_task },
     { "INFO",      "Show OS info",                                           handle_info },
     { "STAT",      "Show HDLC stat",                                         handle_stat },
     { "RESET",     "Reset CPU",                                              handle_reset },
+    { "FIRMWARE",  "FIRMWARE [SWITCH] - Show both firmware slots, or restart into XMSGGW", handle_firmware },
     { "INSPECT",   "INSPECT [BAD [0..3]] - Last frame, or n-th newest bad one", handle_inspect },
     { "DECODE",    "DECODE <hex bytes> - Decode an HDLC frame, nothing sent", handle_decode },
     { "EXIT",      "Exit debug mode, back to forwarding frames",             handle_exit },
@@ -346,6 +348,12 @@ static bool set_bit_rate(uint32_t rate)
         return false;
     }
     spi_tx_task_set_bit_rate(rate);
+    /* Stored in the settings both firmwares share (../common/board.h), so it
+     * survives a restart and a switch to XMSGGW. */
+    if (board_set_rate(rate) != 0)
+    {
+        console_out_println("Rate set, but could not be stored.");
+    }
     return true;
 }
 
@@ -420,14 +428,84 @@ static void handle_loopback(const char *args)
 }
 
 /**
- * @brief ECHO command.
+ * @brief DEBUG command (Ronny, 2026-11-12; replaces RC422Dev's HDLC and ECHO,
+ *        which flipped the switch and left you guessing its state):
+ *
+ *   DEBUG                 show both switches
+ *   DEBUG HDLC ON|OFF     cut the line bytes into frames while the console
+ *                         is open: checked, counted (STAT), kept (INSPECT),
+ *                         one line each. Outside the console decoding is
+ *                         always on.
+ *   DEBUG ECHO ON|OFF     with HDLC on: print each good frame's bytes too;
+ *                         with HDLC off: each raw line byte, as a TRACE log
+ *                         line (LOG 5).
+ *
+ * Neither lets frames pass to or from the PC: EXIT does that.
  * @param[in] args  Rest of the line, or NULL.
  */
-static void handle_echo(const char *args)
+static void handle_debug(const char *args)
 {
-    (void)args;
-    g_echo_enabled = !g_echo_enabled;
-    console_out_printf("Echo of received data is %s.\r\n", g_echo_enabled ? "ON" : "OFF");
+    char what[8];
+    char state[8];
+    bool on;
+    int n = 0;
+
+    /* Two words by hand: sscanf would link in 17.6 KB of scanf code (measured). */
+    what[0] = '\0';
+    state[0] = '\0';
+    if (args != NULL)
+    {
+        const char *p = args;
+        char *dst[2] = { what, state };
+        while (n < 2)
+        {
+            size_t k = 0;
+            while (*p == ' ')
+            {
+                p++;
+            }
+            if (*p == '\0')
+            {
+                break;
+            }
+            while (*p != '\0' && *p != ' ')
+            {
+                if (k < sizeof what - 1u)
+                {
+                    dst[n][k++] = *p;
+                }
+                p++;
+            }
+            dst[n][k] = '\0';
+            n++;
+        }
+    }
+    if (n <= 0)
+    {
+        console_out_printf("HDLC decoding %s, ECHO %s\r\n", g_hdlc_mode ? "ON" : "OFF",
+                           g_echo_enabled ? "ON" : "OFF");
+        return;
+    }
+    if (n != 2 || (strcasecmp(state, "ON") != 0 && strcasecmp(state, "OFF") != 0))
+    {
+        console_out_println("Usage: DEBUG [HDLC|ECHO ON|OFF]");
+        return;
+    }
+    on = (strcasecmp(state, "ON") == 0);
+    if (strcasecmp(what, "HDLC") == 0)
+    {
+        g_hdlc_mode = on;
+        console_out_printf("HDLC decoding %s.\r\n", on ? "ON" : "OFF");
+    }
+    else if (strcasecmp(what, "ECHO") == 0)
+    {
+        g_echo_enabled = on;
+        console_out_printf("ECHO %s.\r\n", on ? "ON" : "OFF");
+    }
+    else
+    {
+        console_out_println("Usage: DEBUG [HDLC|ECHO ON|OFF]");
+    }
 }
 
 /**
@@ -497,16 +575,6 @@ static void handle_send_debug(const char *args)
     (void)spi_tx_task_push(bytes, count);     /* count <= CMD_MAX_BYTES always fits */
 }
 
-/**
- * @brief HDLC command.
- * @param[in] args  Rest of the line, or NULL.
- */
-static void handle_hdlc(const char *args)
-{
-    (void)args;
-    g_hdlc_mode = !g_hdlc_mode;
-    console_out_printf("HDLC mode is %s.\r\n", g_hdlc_mode ? "ENABLED" : "DISABLED");
-}
 
 /**
  * @brief F command: build a frame with FCS, show it, send it.
@@ -898,6 +966,36 @@ static void handle_stat(const char *args)
  *        sees the answer.
  * @param[in] args  Rest of the line, or NULL.
  */
+/**
+ * @brief FIRMWARE command: show what both slots hold, or (SWITCH) restart
+ *        into the other one (../common/board.h).
+ * @param[in] args  NULL / empty, or SWITCH.
+ */
+static void handle_firmware(const char *args)
+{
+    char text[512];
+
+    if (args == NULL || *args == '\0')
+    {
+        board_firmware_report(text, sizeof text);
+        console_out_printf("%s", text);
+        return;
+    }
+    if (strcasecmp(args, "SWITCH") != 0)
+    {
+        console_out_println("Usage: FIRMWARE [SWITCH]");
+        return;
+    }
+    if (board_firmware_switch(text, sizeof text) != 0)
+    {
+        console_out_printf("%s", text);
+        return;
+    }
+    console_out_printf("%s", text);
+    console_out_flush();
+    ESP.restart();
+}
+
 static void handle_reset(const char *args)
 {
     (void)args;

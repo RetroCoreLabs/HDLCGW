@@ -10,6 +10,7 @@
 ** Ronny Hansen                                                          **
 ***************************************************************************/
 #include "wifi_task.h"
+#include "../common/board.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -163,8 +164,6 @@ static void load_settings(void)
     g_cfg.tcp_mode = WIFI_TASK_TCP_SERVER;
     if (prefs.begin(NVS_NAMESPACE, true))
     {
-        prefs.getString("ssid", g_cfg.ssid, sizeof(g_cfg.ssid));
-        prefs.getString("pass", g_cfg.pass, sizeof(g_cfg.pass));
         prefs.getString("thost", g_cfg.host, sizeof(g_cfg.host));
         g_cfg.port = prefs.getUShort("tport", WIFI_TASK_DEFAULT_PORT);
         g_cfg.tcp_mode = prefs.getUChar("tmode", WIFI_TASK_TCP_SERVER);
@@ -172,6 +171,8 @@ static void load_settings(void)
         g_cfg.mirror = prefs.getUChar("mirror", 0) != 0;
         prefs.end();
     }
+    /* The network is shared with XMSGGW (../common/board.h). */
+    (void)board_wifi(g_cfg.ssid, g_cfg.pass);
     if (g_cfg.port == 0)
     {
         g_cfg.port = WIFI_TASK_DEFAULT_PORT;
@@ -300,8 +301,7 @@ int wifi_task_set_ssid(const char *ssid)
     g_cfg.ssid[sizeof(g_cfg.ssid) - 1] = '\0';
     g_cfg_dirty = true;
     cfg_unlock();
-    store_string("ssid", g_cfg.ssid);
-    return 0;
+    return board_set_wifi_ssid(ssid);
 }
 
 int wifi_task_set_pass(const char *pass)
@@ -315,8 +315,7 @@ int wifi_task_set_pass(const char *pass)
     g_cfg.pass[sizeof(g_cfg.pass) - 1] = '\0';
     g_cfg_dirty = true;
     cfg_unlock();
-    store_string("pass", g_cfg.pass);
-    return 0;
+    return board_set_wifi_pass(pass);
 }
 
 void wifi_task_set_enabled(bool enabled)
@@ -375,6 +374,9 @@ void wifi_task_clear_settings(void)
         prefs.clear();
         prefs.end();
     }
+    /* WIFI CLEAR forgets the network too, and that one is shared: XMSGGW
+     * loses it as well. The line rate stays. */
+    (void)board_clear_wifi();
     cfg_lock();
     load_settings();
     g_cfg.tcp_mode = WIFI_TASK_TCP_OFF;

@@ -40,6 +40,7 @@
 #include "libhdlc/esp32s2/line_log.h"
 #include "usb_tx_task.h"
 #include "wifi_task.h"
+#include "../common/board.h"
 
 /**
  * @brief Arduino start-up: open the USB serial port and start the four tasks.
@@ -80,6 +81,9 @@ void setup(void)
 #if !USB_RX_DIRECT
     Serial.setRxBufferSize(8192);
 #endif
+    /* First: the firmware LEDs, the firmware select button (it may restart
+     * the board into XMSGGW) and the settings both firmwares share. */
+    board_start(BOARD_FW_HDLCGW, HDLCGW_VERSION);
     Serial.begin(115200);
     usb_rx_begin();
     Serial.println("HDLC GW version " HDLCGW_VERSION);
@@ -87,6 +91,12 @@ void setup(void)
     line_log_set_error(line_error_early);
     spi_tx_task_init();
     spi_rx_task_init();
+    /* The line rate both firmwares share (BAUD stores it); none stored keeps
+     * the transmit task's own start-up rate. */
+    if (board_rate() != 0)
+    {
+        spi_tx_task_set_bit_rate(board_rate());
+    }
     usb_tx_task_init();
     console_task_init();
     wifi_task_init();
@@ -128,4 +138,5 @@ void setup(void)
 void loop(void)
 {
     vTaskDelay(pdMS_TO_TICKS(1000));
+    board_tick(millis());
 }

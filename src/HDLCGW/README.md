@@ -134,6 +134,10 @@ $cfg = "$env:USERPROFILE\.arduinoIDE\arduino-cli.yaml"
 & $cli --config-file $cfg upload --fqbn esp32:esp32:lolin_s2_mini -p COM10 .
 ```
 
+The upload writes slot 1, HDLCGW's place, and makes slot 1 start next; XMSGGW in slot 2 and the
+settings stay. [Installing the firmware](../../docs/INSTALL.md) has the slots and the other ways
+to install.
+
 Build option: `USB_RX_DIRECT` (in `usb_rx.h`, default 1) reads USB input straight from TinyUSB,
 so the PC is held back instead of bytes being dropped. 0 builds the Arduino core's
 `Serial.read()` path, kept for comparison.
@@ -160,7 +164,7 @@ the reply; repeat `--command` for several. The full wire format is described in 
 `extras/docs/control-frames.md`, and the code is its `control_frame.h`.
 
 **From a terminal: the text console.** Open the port (115200 is what the build guide uses) and press ESC three times
-between frames. The prompt is `#`. `EXIT` goes back to forwarding mode. Programs should not
+between frames. The prompt is `HDLC#` (`HDLC@` while `DEBUG HDLC` is on, with `>` after it while `DEBUG ECHO` is on). `EXIT` goes back to forwarding mode. Programs should not
 use this; use control frames.
 
 ## Commands
@@ -181,20 +185,22 @@ sensitive. `HELP` prints this list on the board.
 | `. [count]` | Send the bytes 0..count-1 |
 | `DECODE <hex bytes>` | Decode an HDLC frame (address, control field, checksum); nothing is sent |
 | `INSPECT [BAD [0..3]]` | Decode the last frame off the line, or one of the four newest bad ones |
-| `HDLC` | Toggle decoding of received data in the console |
+| `DEBUG [HDLC\|ECHO ON\|OFF]` | While this console is open: `HDLC ON` cuts the line bytes into frames (checked, counted in `STAT`, kept for `INSPECT`, one line each); `ECHO ON` also prints each good frame's bytes, or with `HDLC OFF` each raw line byte (it is a `LOG 5` line; from the code, not yet seen on the board). `DEBUG` alone shows both. Neither passes frames to the PC: `EXIT` does. |
 | `LOOPBACK ON\|OFF` | Loopback mode |
-| `ECHO` | Echo received data to the console |
 | `DUMP` / `CLEAR` | Dump or clear the receive buffer |
 | `RXDMA` | Dump the receive DMA ring |
 | `LOG [0..5]` | Log level: 0 off, 1 error, 2 warn, 3 info, 4 debug, 5 trace |
 | `PACKETGEN` | Packet generation mode: each byte from the PC comes back as a 6-byte frame. ESC ESC ESC returns |
 | `EXIT` | Leave the console, back to forwarding frames |
 | `RESET` | Restart the board |
+| `FIRMWARE [SWITCH]` | Show both firmware slots; `SWITCH` restarts into XMSGGW ([Installing the firmware](../../docs/INSTALL.md)) |
 | `WIFI ...`, `TCP ...`, `MIRROR ...` | See below |
 
 ## WiFi and TCP
 
-Settings are kept in flash and survive a reset and a re-flash.
+Settings are kept in flash and survive a reset, a re-flash and a switch to XMSGGW. The network
+name and passphrase are shared with XMSGGW: set them in either firmware. `BAUD` is stored too
+(since 2026-11-12) and shared the same way.
 
 | Command | What it does |
 |---|---|
@@ -205,14 +211,18 @@ Settings are kept in flash and survive a reset and a re-flash.
 | `WIFI ON` | Turn WiFi on: connect now and after every reset |
 | `WIFI OFF` | Turn WiFi off: radio down, frames stay on USB |
 | `WIFI CONNECT` | Drop the connection and connect again now |
-| `WIFI CLEAR` | Erase all settings: WiFi off, no SSID, TCP off, MIRROR off |
+| `WIFI CLEAR` | Erase all settings: WiFi off, no SSID, TCP off, MIRROR off. The network is shared, so XMSGGW loses it too |
 | `TCP SERVER [port]` | Accept one TCP peer on the port (default 1362, mDNS name `hdlcgw.local`) |
 | `TCP CLIENT <host> <port>` | Dial out to host:port, retry every 5 s |
 | `TCP OFF` | No TCP; line frames go to USB |
 | `TCP DEBUG` | The client socket, the gateway's buffers, the WiFi receive counters and lwIP's own state per connection, for fault finding |
 | `MIRROR ON\|OFF` | With a TCP peer connected, send line frames to USB as well |
 
-**First-time setup**, no network configured yet:
+**First-time setup**, no network configured yet. Opening the text console (ESC ESC ESC) asks by
+itself: it lists the networks it can see, takes a number from that list or a name, then the
+password (shown as `*`), stores both and turns WiFi on. `NONE` means this board runs without WiFi
+and stops the question (until `WIFI SSID` or `WIFI CLEAR`); Enter skips it this time. Then
+`TCP SERVER`. The same by hand:
 
 ```
 WIFI SCAN

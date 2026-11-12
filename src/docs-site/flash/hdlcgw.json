@@ -1,0 +1,17 @@
+{
+  "name": "HDLCGW (slot 1)",
+  "version": "newest release",
+  "new_install_prompt_erase": false,
+  "new_install_improv_wait_time": 0,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S2",
+      "parts": [
+        {
+          "path": "HDLCGW.bin",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}

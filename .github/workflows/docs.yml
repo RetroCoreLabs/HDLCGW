@@ -2,7 +2,12 @@
 # (https://retrocorelabs.github.io/HDLCGW/) on every push to master.
 # A pull request builds and checks it without publishing.
 # The pages come from the headers and the Markdown files: src/tools/gen_docs.py writes them,
-# src/docs-site/ holds the settings.
+# src/docs-site/ holds the settings. The flash page (src/docs-site/flash/) gets the newest
+# release's .bin files: GitHub's release downloads cannot be read by a web page from another
+# site, so the browser installer needs them on this site. A release does not start this
+# workflow: the github-pages environment only takes deploys from master, and a release run
+# is on its tag. After a release, run this workflow by hand on master (Actions, Docs, Run
+# workflow), or let the next push to master do it.
 name: Docs
 
 on:
@@ -34,6 +39,16 @@ jobs:
         run: python3 src/tools/gen_toc.py --check
       - name: Write the pages
         run: python3 src/tools/gen_docs.py build-site
+      - name: Put the newest release's firmware files next to the flash page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release download --repo "$GITHUB_REPOSITORY" --pattern '*.bin' --dir build-site/docs/flash
+            ls -l build-site/docs/flash
+          else
+            echo "No release yet: the flash page has no files to write."
+          fi
       - name: Build site
         run: mkdocs build --strict -f build-site/mkdocs.yml -d "${{ runner.temp }}/site"
       - uses: actions/upload-pages-artifact@v5

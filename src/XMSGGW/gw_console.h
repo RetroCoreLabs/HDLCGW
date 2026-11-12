@@ -1,5 +1,5 @@
 /**************************************************************************
-** GW_CONSOLE - the login and the XMSGGW> command line, libxmsg's console **
+** GW_CONSOLE - the login and the XMSG> command line, libxmsg's console  **
 **                                                                       **
 ** libxmsg console/console.h is the one login and command line for every **
 ** way a user arrives; this file plugs XMSGGW into it:                   **

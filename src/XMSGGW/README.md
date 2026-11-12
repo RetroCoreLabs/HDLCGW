@@ -96,9 +96,12 @@ through libcosmos' COSMOS file client and sent to the client as it arrives, thro
 buffer in PSRAM; there is no size limit. A file SINTRAN refuses gives `550` with SINTRAN's error number.
 
 An upload (`STOR`) is taken whole into PSRAM (at most 1 MB) and then written to SINTRAN as a new
-file under the folder's SINTRAN user. SINTRAN refuses to write over a file that exists (error 62,
-octal 76, tested 2026-11-12) and keeps the old one; an empty file is refused, because no capture
-shows how SINTRAN writes one.
+file under the folder's SINTRAN user. A file that exists is replaced: the gateway first asks for a
+new file, SINTRAN refuses that with error 62 (octal 76) and leaves the file as it was, and the
+gateway then asks again to write over it. Tested 2026-11-12 with 2000, 3000 and then 500 bytes:
+each read back unchanged, and FILE-STATISTICS showed 500 bytes after the last one (SINTRAN keeps
+the 2 pages the larger version used). An empty file is refused, because no capture shows how
+SINTRAN writes one.
 
 `TYPE A` (ASCII, the start value) clears bit 7 of every byte on the way out, and sets it to even
 parity on the way in, which is how SINTRAN keeps text (all 4780 bytes of STARTX3:MODE on D100 have
@@ -151,7 +154,7 @@ The SINTRAN password has to be sent to SINTRAN, so it is stored on the board as 
 hashed. FTP itself sends the gateway password in clear, as telnet does.
 
 Not built yet:
-- writing over a file, appending, deleting and renaming files;
+- appending, deleting and renaming files;
 - showing only the machines that are online now: today `/` lists every machine the host knows by
   name.
 

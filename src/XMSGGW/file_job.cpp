@@ -44,6 +44,7 @@ struct FileJob
     bool list;
     const uint8_t *src;       /* write: the front end's bytes; NULL for read and list */
     uint32_t src_len;
+    bool overwrite;           /* write: replace a file that exists (FA_WRITE_OVERWRITE) */
     uint16_t system;
     char user[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
     char password[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
@@ -196,8 +197,8 @@ static void cb_done(void *ctx, int result, uint16_t sintran_error)
 
 /* The request fields, the write source among them, are all set before the state says
  * ASKED: the node task may start the job the moment it sees that. */
-static int job_start(FileJob *job, bool list, const uint8_t *src, uint32_t src_len, uint16_t system,
-                     const char *user, const char *password, const char *spec)
+static int job_start(FileJob *job, bool list, const uint8_t *src, uint32_t src_len, bool overwrite,
+                     uint16_t system, const char *user, const char *password, const char *spec)
 {
     if (job == NULL || strlen(user) >= sizeof job->user || strlen(password) >= sizeof job->password
         || strlen(spec) >= sizeof job->spec)
@@ -214,6 +215,7 @@ static int job_start(FileJob *job, bool list, const uint8_t *src, uint32_t src_l
     job->list = list;
     job->src = src;
     job->src_len = src_len;
+    job->overwrite = overwrite;
     job->system = system;
     (void)snprintf(job->user, sizeof job->user, "%s", user);
     (void)snprintf(job->password, sizeof job->password, "%s", password);
@@ -240,17 +242,17 @@ static int job_start(FileJob *job, bool list, const uint8_t *src, uint32_t src_l
 int file_job_start(FileJob *job, bool list, uint16_t system, const char *user, const char *password,
                    const char *spec)
 {
-    return job_start(job, list, NULL, 0, system, user, password, spec);
+    return job_start(job, list, NULL, 0, false, system, user, password, spec);
 }
 
 int file_job_start_write(FileJob *job, uint16_t system, const char *user, const char *password,
-                         const char *spec, const uint8_t *bytes, uint32_t length)
+                         const char *spec, const uint8_t *bytes, uint32_t length, bool overwrite)
 {
     if (bytes == NULL || length == 0u)
     {
         return -1;
     }
-    return job_start(job, false, bytes, length, system, user, password, spec);
+    return job_start(job, false, bytes, length, overwrite, system, user, password, spec);
 }
 
 void file_job_get(FileJob *job, file_job_status *out)
@@ -374,7 +376,7 @@ static void job_pass(FileJob *j, XmsgNode *node, uint32_t now)
         if (j->src != NULL)
         {
             rc = fa_client_write(j->client, node, j->system, j->system, j->user, j->user, j->password, j->spec,
-                                 j->src_len, now);
+                                 j->src_len, j->overwrite ? FA_WRITE_OVERWRITE : FA_WRITE_CREATE, now);
         }
         else if (j->list)
         {

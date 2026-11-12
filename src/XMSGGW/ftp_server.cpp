@@ -828,12 +828,11 @@ static void stat_pass(void)
     const FaFileEntry *e = &first;
     if (which == STAT_SIZE)
     {
-        if (!e->has_bytes)
-        {
-            replyf("550 %s: SINTRAN keeps no byte count for it.", s_file_name);
-            return;
-        }
-        replyf("213 %lu", (unsigned long)e->bytes);
+        /* No byte count in the entry: 0, as the listing shows and as a download gives (an
+         * open reply without a length is a 0-byte file, libxmsg c0b0c8b; FILE-STATISTICS of
+         * RONNY-R:TXT on D100 says "0 BYTES IN FILE"). A 550 here made curl give up on the
+         * download (Ronny, 2026-11-12). */
+        replyf("213 %lu", e->has_bytes ? (unsigned long)e->bytes : 0ul);
         return;
     }
     FaNdDate d;

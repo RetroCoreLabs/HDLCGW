@@ -200,7 +200,7 @@ All of them, as `ftp_server.cpp` handles them. Commands are not case sensitive. 
 | `NLST [NAME]` | `ls`: names only. `NAME` filters as for LIST; a pattern with `*` (`CHAT*`) is matched by the gateway |
 | `RETR NAME.TYPE` | downloads a file from the folder's SINTRAN user, streamed as it arrives, no size limit |
 | `STOR NAME.TYPE` | uploads a file (at most 1 MB, not empty). A file that exists is replaced. `226`, or `550` with SINTRAN's error |
-| `SIZE NAME.TYPE` | `213` and the byte count, asked from SINTRAN |
+| `SIZE NAME.TYPE` | `213` and the byte count, asked from SINTRAN; 0 for a file SINTRAN keeps no byte count for, as the listing shows |
 | `MDTM NAME.TYPE` | `213 YYYYMMDDhhmmss`: the last write, else the creation, in SINTRAN's own time |
 | `CONV`, `SITE CONV` | switches names between `NAME.TYPE` and SINTRAN's `NAME:TYPE;1`; `200` |
 | `SITE TABLE` | switches LIST between `ls -l` lines and SINTRAN's own table; `200`. Any other SITE gets `504` |

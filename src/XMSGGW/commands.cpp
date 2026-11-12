@@ -874,6 +874,142 @@ static void handle_parity(const char *args)
                        settings_parity() ? "with even" : "without");
 }
 
+/* Commands the shared list leaves to the console core or gw_console.cpp
+ * (commands.h): the core takes HELP, INFO and EXIT before the application
+ * sees a line, and gw_console.cpp answers NODE and FIRMWARE itself. */
+static const char *const NOT_SHARED[] = { "HELP", "INFO", "EXIT", "NODE", "FIRMWARE" };
+
+/** Commands an ordinary (not admin) user may run; WIFI only to look. */
+static const char *const FOR_USERS[] = { "STAT", "INSPECT", "TASK", "WIFI" };
+
+/** @brief Copy the first word of line (upper or lower case kept) into word. */
+static const char *first_word(const char *line, char *word, size_t cap)
+{
+    size_t n = 0;
+    while (*line == ' ')
+    {
+        line++;
+    }
+    while (*line != '\0' && *line != ' ' && n + 1u < cap)
+    {
+        word[n++] = *line++;
+    }
+    word[n] = '\0';
+    while (*line == ' ')
+    {
+        line++;
+    }
+    return line;
+}
+
+/** @brief Whether name is in list. */
+static bool in_list(const char *name, const char *const *list, size_t count)
+{
+    for (size_t i = 0; i < count; i++)
+    {
+        if (strcasecmp(name, list[i]) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief The table row for name, or NULL. */
+static const command *find_command(const char *name)
+{
+    for (int i = 0; i < NUM_COMMANDS; i++)
+    {
+        if (strcasecmp(name, COMMANDS[i].name) == 0)
+        {
+            return &COMMANDS[i];
+        }
+    }
+    return NULL;
+}
+
+int commands_shared_check(const char *line, bool admin, bool usb, char *why, size_t cap)
+{
+    char word[16];
+    const char *args;
+
+    if (line == NULL || why == NULL || cap == 0u)
+    {
+        return 0;
+    }
+    why[0] = '\0';
+    args = first_word(line, word, sizeof word);
+    if (find_command(word) == NULL
+        || in_list(word, NOT_SHARED, sizeof NOT_SHARED / sizeof NOT_SHARED[0]))
+    {
+        return 0;
+    }
+    if (!usb && strcasecmp(word, "TERM") == 0)
+    {
+        (void)snprintf(why, cap, "TERM is for the USB console; here use CONNECT <system>\r\n");
+        return -1;
+    }
+    if (strcasecmp(word, "WIFI") == 0 && strncasecmp(args, "SHOW", 4) == 0
+        && (args[4] == '\0' || args[4] == ' '))
+    {
+        if (!usb)
+        {
+            /* Ronny, 2026-11-12: the password is shown on the USB console only. */
+            (void)snprintf(why, cap, "WIFI SHOW is for the USB console only\r\n");
+            return -1;
+        }
+        return 1;
+    }
+    if (admin)
+    {
+        return 1;
+    }
+    if (!in_list(word, FOR_USERS, sizeof FOR_USERS / sizeof FOR_USERS[0]))
+    {
+        (void)snprintf(why, cap, "not allowed\r\n");
+        return -1;
+    }
+    if (strcasecmp(word, "WIFI") == 0 && *args != '\0' && strcasecmp(args, "STATUS") != 0
+        && strcasecmp(args, "SCAN") != 0)
+    {
+        (void)snprintf(why, cap, "not allowed: WIFI, WIFI STATUS and WIFI SCAN only\r\n");
+        return -1;
+    }
+    return 1;
+}
+
+void commands_shared_help(char *out, size_t cap, bool admin)
+{
+    size_t len = 0;
+
+    if (out == NULL || cap == 0u)
+    {
+        return;
+    }
+    out[0] = '\0';
+    for (int i = 0; i < NUM_COMMANDS; i++)
+    {
+        const command *c = &COMMANDS[i];
+        int n;
+        if (in_list(c->name, NOT_SHARED, sizeof NOT_SHARED / sizeof NOT_SHARED[0]))
+        {
+            continue;
+        }
+        /* The core shows the user lines to everybody and the admin lines to the
+         * admin after them, so each command is in one of the two texts. */
+        if (admin == in_list(c->name, FOR_USERS, sizeof FOR_USERS / sizeof FOR_USERS[0]))
+        {
+            continue;
+        }
+        n = snprintf(&out[len], cap - len, "%-18s %s\r\n", c->name, c->help);
+        if (n < 0 || (size_t)n >= cap - len)
+        {
+            break;   /* the list is cut here rather than half a line */
+        }
+        len = len + (size_t)n;
+    }
+}
+
 void commands_process(char *line)
 {
     char *name = strtok(line, " ");

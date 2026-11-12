@@ -279,9 +279,25 @@ same files; COPY-TERM of LOAD-MODE:MODE; a missing file; escape during a running
 ## USB console
 
 Control frames from a host program (HELLO, COMMAND, LOG_LEVEL, STAT_PUSH, PING; replies, LOG,
-EVENT and STAT back), the same way HDLCGW works, or a text console after three ESC presses (prompt `XMSG#`; telnet shows `XMSG>`). STAT
-frames use HDLCGW's field order; the TCP fields are always 0. No login: whoever holds the USB
-cable is the administrator.
+EVENT and STAT back), the same way HDLCGW works, or a text console after three ESC presses. STAT
+frames use HDLCGW's field order; the TCP fields are always 0.
+
+**One command list for USB and telnet** (2026-11-12). The text console is the same console a
+telnet user gets, prompt `XMSG>`, with no login: whoever holds the USB cable is the
+administrator, and `WHO` shows the place as `USB cable`. So `WHO`, `LIST`, `NAMES`, `CONNECT`,
+`USERS`, the file commands and the rest of the [telnet commands](#telnet) work here, and the
+commands below work on telnet too:
+
+- every logged-in telnet user may run `STAT`, `INSPECT`, `TASK` and `WIFI` / `WIFI STATUS` /
+  `WIFI SCAN`; the others are for the admin;
+- `TERM` (a terminal session printed on the USB port) and `WIFI SHOW` (the password) are for
+  the USB console only;
+- these commands run in the USB task, not in the task that keeps the XMSG link, so a slow one
+  (`WIFI SCAN`, about 3 s) does not hold up the line. One runs at a time; a second one from
+  another place is answered "try again".
+
+`HELP`, `INFO` and `EXIT` are the shared console's own. COMMAND control frames from a host
+program still run the table below directly, `INFO` included.
 
 | Command | What it does |
 |---|---|
@@ -293,7 +309,7 @@ cable is the administrator.
 | `TERM CONNECT <system>\|TYPE <text>\|SHOW\|STATUS\|HANGUP` | a terminal session from the console |
 | `WIFI [STATUS]\|SSID <name>\|PASS <password>\|CONNECT` | the network for telnet |
 | `WIFI SCAN` | list the networks the board can see (about 3 s, 2.4 GHz only) |
-| `WIFI SHOW` | show the stored network name and password; USB console only (telnet has no WIFI command) |
+| `WIFI SHOW` | show the stored network name and password; USB console only |
 | `TTYP [n]` | terminal type for new sessions (0 default; 93 = TDV 2200) |
 | `PARITY [ON\|OFF]` | even parity on typed bytes for new sessions (ON default) |
 | `ALIAS [<name> <system number>\|DEL <name>]` | names `CONNECT` takes, besides the ones learned from the host |
@@ -302,7 +318,7 @@ cable is the administrator.
 | `INSPECT [BAD [0..3]]` | the last frame, or the n-th newest bad one |
 | `LOG [0..5]` | 0 off, 1 error, 2 warn, 3 info, 4 debug, 5 trace |
 | `TASK` | the running tasks |
-| `INFO` | build, chip and memory |
+| `INFO` | build, chip and memory (COMMAND frames; the text console's `INFO` is the shared one) |
 | `RESET` | restart the gateway |
 | `FIRMWARE [SWITCH]` | show both firmware slots; `SWITCH` restarts into HDLCGW (also on telnet: `FIRMWARE` for every user, `SWITCH` for the admin) |
 | `EXIT` | leave the text console, back to control frames |

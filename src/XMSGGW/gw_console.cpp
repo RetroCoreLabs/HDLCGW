@@ -28,7 +28,9 @@
 
 #include "libhdlc/esp32s2/spi_tx_task.h"
 
+#include "commands.h"
 #include "console_out.h"
+#include "console_task.h"
 #include "names.h"
 #include "node_task.h"
 #include "settings.h"
@@ -82,6 +84,17 @@ static XmsgNode *s_node = NULL;            /* set on each pass; the services nee
  * own time made the timeout sum go below zero and LIST ended at once
  * with "the host did not answer" (2026-11-10, first live run). */
 static uint32_t s_now = 0;
+
+/* The USB text console as one more place (console_task.h): logged in as admin,
+ * no password - whoever holds the cable owns the board. */
+static ConsoleSession *s_usb = NULL;
+static size_t s_job_off = 0;      /* bytes of the finished command's text already printed */
+
+/* HELP text: the core's own lines come first, then these (built at init from
+ * commands.cpp's table, so a new command shows up by itself). PSRAM. */
+#define HELP_TEXT_MAX 3072
+static char *s_help_user = NULL;
+static char *s_help_admin = NULL;
 
 /* ------------------------------------------------------------- users */
 
@@ -565,6 +578,29 @@ static int svc_command(void *ctx, int place, const char *line, AuthLevel level, 
         }
         return 1;
     }
+    /* The rest of the USB console's commands (commands.h, one list for every
+     * place). They run in the console task, so the answer comes later. */
+    {
+        char why[96];
+        bool usb = (s_usb != NULL && place == s_usb->place);
+        int shared = commands_shared_check(line, level == AUTH_LEVEL_ADMIN, usb, why, sizeof why);
+        if (shared < 0)
+        {
+            (void)snprintf(out, cap, "%s", why);
+            return 1;
+        }
+        if (shared > 0)
+        {
+            if (!console_task_job_post(place, line))
+            {
+                (void)snprintf(out, cap,
+                               "Another console's command is still running; try again.\r\n");
+                return 1;
+            }
+            s_job_off = 0;
+            return 2;
+        }
+    }
     bool node = word_is(line, "NODE", &args);
     bool restart = !node && word_is(line, "RESTART", &args);
     bool sintran = !node && !restart && word_is(line, "SINTRAN", &args);
@@ -600,6 +636,108 @@ static void svc_command_cancel(void *ctx, int place)
 {
     (void)ctx;
     file_console_cancel(place);
+    console_task_job_cancel(place);
+}
+
+/* ---------------------------------------------------------- USB line */
+
+static int usb_write(void *ctx, const uint8_t *bytes, size_t len)
+{
+    (void)ctx;
+    console_out_text((const char *)bytes, (int)len);
+    return (int)len;
+}
+
+/** @brief EXIT on the USB place: the port goes back to control frames. */
+static void usb_close(void *ctx, ConsoleClose why)
+{
+    (void)ctx;
+    (void)why;
+    s_usb = NULL;   /* the session is the core's again (console.h) */
+    console_task_usb_closed();
+}
+
+static void usb_describe(void *ctx, char *buf, size_t cap)
+{
+    (void)ctx;
+    (void)snprintf(buf, cap, "cable");   /* WHO shows the kind "USB" before it */
+}
+
+/** @brief Open, feed and lose the USB place (console_task.h). */
+static void usb_pass(uint32_t now)
+{
+    uint8_t buf[64];
+    int n;
+
+    if (console_task_usb_take_lost() && s_usb != NULL)
+    {
+        ConsoleSession *s = s_usb;
+        s_usb = NULL;
+        console_line_lost(s);   /* hangs up any onward session */
+    }
+    if (console_task_usb_take_open() && s_usb == NULL)
+    {
+        ConsoleLine line;
+        memset(&line, 0, sizeof line);
+        line.ctx = NULL;
+        line.caps = CONSOLE_LINE_TRUSTED_ADMIN;
+        line.kind = "USB";
+        line.write = usb_write;
+        line.close = usb_close;
+        line.describe = usb_describe;
+        s_usb = console_host_open(&s_host, &line, now);
+        if (s_usb == NULL)
+        {
+            console_out_print("Every console place is in use (WHO on telnet shows who).\r\n");
+            console_task_usb_closed();
+        }
+    }
+    if (s_usb == NULL)
+    {
+        while (console_task_usb_read(buf, (int)sizeof buf) > 0)
+        {
+            /* Keys typed while no place is open have nowhere to go. */
+        }
+        return;
+    }
+    while ((n = console_task_usb_read(buf, (int)sizeof buf)) > 0)
+    {
+        console_input(s_usb, buf, (size_t)n, now);
+        if (s_usb == NULL)
+        {
+            return;   /* EXIT closed it */
+        }
+    }
+}
+
+/** @brief A shared command has finished in the console task: print its text. */
+static void job_pass(void)
+{
+    int place = -1;
+    const char *text = console_task_job_result(&place);
+    ConsoleSession *s;
+    int took;
+
+    if (text == NULL)
+    {
+        return;
+    }
+    s = console_host_session(&s_host, place);
+    took = (s != NULL) ? console_command_text(s, text + s_job_off) : -1;
+    if (took < 0)
+    {
+        s_job_off = 0;   /* the user left or stopped it */
+        console_task_job_release();
+        return;
+    }
+    s_job_off = s_job_off + (size_t)took;
+    if (text[s_job_off] == '\0')
+    {
+        s_job_off = 0;
+        console_task_job_release();
+        console_command_done(s);
+    }
+    /* else the line is full: the rest goes on a later pass */
 }
 
 /* ------------------------------------------------------- telnet lines */
@@ -860,11 +998,30 @@ int gw_console_init(void)
     cfg.services.who_more = svc_who_more;
     cfg.services.command = svc_command;
     cfg.services.command_cancel = svc_command_cancel;
-    cfg.services.help_user = FILE_CONSOLE_HELP;
-    cfg.services.help_admin =
-        "NODE <n>           show or store our node number, used after RESTART (admin)\r\n"
-        "RESTART            restart the gateway; every session ends (admin)\r\n"
-        "FIRMWARE [SWITCH]  show both firmware slots; SWITCH restarts into HDLCGW (admin)\r\n";
+    s_help_user = (char *)heap_caps_calloc(1, HELP_TEXT_MAX, MALLOC_CAP_SPIRAM);
+    s_help_admin = (char *)heap_caps_calloc(1, HELP_TEXT_MAX, MALLOC_CAP_SPIRAM);
+    if (s_help_user == NULL || s_help_admin == NULL)
+    {
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the HELP text");
+        return -1;
+    }
+    {
+        size_t n = (size_t)snprintf(s_help_user, HELP_TEXT_MAX, "%s", FILE_CONSOLE_HELP);
+        if (n < HELP_TEXT_MAX)
+        {
+            commands_shared_help(s_help_user + n, HELP_TEXT_MAX - n, false);
+        }
+        n = (size_t)snprintf(s_help_admin, HELP_TEXT_MAX, "%s",
+            "NODE <n>           show or store our node number, used after RESTART (admin)\r\n"
+            "RESTART            restart the gateway; every session ends (admin)\r\n"
+            "FIRMWARE [SWITCH]  show both firmware slots; SWITCH restarts into HDLCGW (admin)\r\n");
+        if (n < HELP_TEXT_MAX)
+        {
+            commands_shared_help(s_help_admin + n, HELP_TEXT_MAX - n, true);
+        }
+    }
+    cfg.services.help_user = s_help_user;
+    cfg.services.help_admin = s_help_admin;
     if (console_host_init(&s_host, &cfg, s_sessions, PLACES) != 0)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "console_host_init failed");
@@ -926,9 +1083,11 @@ void gw_console_pass(XmsgNode *node, uint32_t now)
     s_node = node;
     s_now = now;
     telnet_pass(now);
+    usb_pass(now);
     tad_pass(now);
     onward_pass();
     file_console_pass(node, &s_host, now);
+    job_pass();
     console_host_poll(&s_host, now);
     if (s_restart && (int32_t)(now - s_restart_at) >= 0)
     {

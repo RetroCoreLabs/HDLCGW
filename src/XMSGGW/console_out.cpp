@@ -151,8 +151,42 @@ static void console_out_send_chunk(bool last, bool error)
  * @param[in] s  Bytes.
  * @param[in] n  Number of bytes.
  */
+/* Text caught for a command run for the console core (console_out_capture_begin). */
+static TaskHandle_t g_cap_task = NULL;
+static char *g_cap_buf = NULL;
+static size_t g_cap_cap = 0;
+static size_t g_cap_len = 0;
+
+void console_out_capture_begin(char *buf, size_t cap)
+{
+    if (buf == NULL || cap == 0u)
+    {
+        return;
+    }
+    g_cap_buf = buf;
+    g_cap_cap = cap;
+    g_cap_len = 0;
+    g_cap_buf[0] = '\0';
+    g_cap_task = xTaskGetCurrentTaskHandle();
+}
+
+size_t console_out_capture_end(void)
+{
+    g_cap_task = NULL;
+    return g_cap_len;
+}
+
 static void console_out_write(const char *s, int n)
 {
+    if (g_cap_task != NULL && g_cap_task == xTaskGetCurrentTaskHandle())
+    {
+        size_t room = g_cap_cap - 1u - g_cap_len;
+        size_t take = ((size_t)n < room) ? (size_t)n : room;
+        memcpy(&g_cap_buf[g_cap_len], s, take);
+        g_cap_len = g_cap_len + take;
+        g_cap_buf[g_cap_len] = '\0';
+        return;
+    }
     if (!g_in_reply)
     {
         /* Outside a reply the port is the text console only in DEBUG mode;
@@ -176,6 +210,14 @@ static void console_out_write(const char *s, int n)
         {
             console_out_send_chunk(false, false);
         }
+    }
+}
+
+void console_out_text(const char *s, int n)
+{
+    if (s != NULL && n > 0)
+    {
+        console_out_write(s, n);
     }
 }
 

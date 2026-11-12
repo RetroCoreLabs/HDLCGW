@@ -91,9 +91,9 @@ with a gateway user, the same ones as telnet. The folders:
 | `/D100` | one folder: the SINTRAN user set for your gateway user |
 | `/D100/SYSTEM` | that user's files, with size and date; download them (`RETR`) |
 
-A SINTRAN file `NAME:TYPE` is named `NAME.TYPE` in FTP. A download is read whole from SINTRAN
-through libcosmos' COSMOS file client into PSRAM (at most 1 MB) and sent to the client as it
-arrives. A file SINTRAN refuses gives `550` with SINTRAN's error number.
+A SINTRAN file `NAME:TYPE` is named `NAME.TYPE` in FTP. A download is read from SINTRAN
+through libcosmos' COSMOS file client and sent to the client as it arrives, through a 256 KB
+buffer in PSRAM; there is no size limit. A file SINTRAN refuses gives `550` with SINTRAN's error number.
 
 `TYPE A` (ASCII, the start value) clears bit 7 of every byte, the parity bit SINTRAN text files
 carry. `TYPE I` (binary) sends the file unchanged. Neither changes line ends: SINTRAN text already

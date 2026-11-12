@@ -10,7 +10,7 @@
 **                         (sintran_accounts.h)                           **
 **   /<machine>/<user>     that user's files: LIST, NLST, SIZE, MDTM and **
 **                         RETR, through libcosmos' COSMOS file client   **
-**                         (file_fetch.h)                                **
+**                         (file_job.h)                                  **
 **                                                                       **
 ** Passive mode (PASV, EPSV) and active mode (PORT, EPRT, only back to   **
 ** the client's own address).                                            **

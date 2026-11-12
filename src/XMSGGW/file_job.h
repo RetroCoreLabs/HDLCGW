@@ -91,13 +91,16 @@ int file_job_start(FileJob *job, bool list, uint16_t system, const char *user, c
  * @param system    The SINTRAN machine's system number.
  * @param user      SINTRAN user: whose directory, and who asks.
  * @param password  That user's password ("" for none). Wiped once the client has it.
- * @param spec      "NAME:TYPE". SINTRAN creates it when it does not exist.
+ * @param spec      "NAME:TYPE".
  * @param bytes     The whole file. It must stay unchanged until the job is IDLE or ENDED.
  * @param length    Its length; 1 or more (libcosmos refuses an empty file).
+ * @param overwrite false: make a new file; SINTRAN refuses one that exists with error 62
+ *                  (FA_ERR_FILE_EXISTS) and leaves it as it was. true: replace a file that
+ *                  exists (libcosmos FA_WRITE_OVERWRITE).
  * @return As file_job_start().
  */
 int file_job_start_write(FileJob *job, uint16_t system, const char *user, const char *password,
-                         const char *spec, const uint8_t *bytes, uint32_t length);
+                         const char *spec, const uint8_t *bytes, uint32_t length, bool overwrite);
 
 /** @brief Read the state. Any task. */
 void file_job_get(FileJob *job, file_job_status *out);

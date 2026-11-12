@@ -162,6 +162,7 @@ static uint8_t *s_up = NULL;          /* XFER_STORE: FTP_UPLOAD_MAX, PSRAM */
 static uint32_t s_up_len = 0;         /* XFER_STORE: bytes received */
 static bool s_up_too_long = false;    /* XFER_STORE: the client sent more than FTP_UPLOAD_MAX */
 static bool s_up_writing = false;     /* XFER_STORE: all in; the job writes it to SINTRAN */
+static bool s_up_overwrite = false;   /* XFER_STORE: the create was refused (file exists); replacing */
 static uint16_t s_up_system = 0;      /* XFER_STORE: the machine */
 
 static char *s_listing = NULL;        /* LISTING_SIZE, PSRAM */
@@ -1054,7 +1055,7 @@ static void store_pass(void)
         int rc = -1;
         if (sintran_account_get(s_user_name, user, password) == 0)
         {
-            rc = file_job_start_write(s_job, s_up_system, user, password, s_file_name, s_up, s_up_len);
+            rc = file_job_start_write(s_job, s_up_system, user, password, s_file_name, s_up, s_up_len, false);
         }
         memset(password, 0, sizeof password);
         if (rc != 0)
@@ -1072,9 +1073,34 @@ static void store_pass(void)
     {
         return;
     }
+    /* FTP's STOR replaces a file that exists. libcosmos makes a new file or replaces one, not
+     * "either": so make it first, and when SINTRAN says it exists (error 62, the file left as
+     * it was), ask again to replace it. The bytes are still in s_up. */
+    if (st.result == FA_CLIENT_EREFUSED && st.sintran_error == FA_ERR_FILE_EXISTS && !s_up_overwrite)
+    {
+        char user[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
+        char password[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
+        int rc = -1;
+        file_job_release(s_job);   /* ENDED: free at once */
+        if (sintran_account_get(s_user_name, user, password) == 0)
+        {
+            rc = file_job_start_write(s_job, s_up_system, user, password, s_file_name, s_up, s_up_len, true);
+        }
+        memset(password, 0, sizeof password);
+        if (rc != 0)
+        {
+            data_end();
+            reply("450 The gateway cannot start the write to SINTRAN now; try again.");
+            return;
+        }
+        s_up_overwrite = true;
+        console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: %s exists, replacing it", s_file_name);
+        return;
+    }
     if (st.result == 0)
     {
-        console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: %s stored, %lu bytes", s_file_name, (unsigned long)s_up_len);
+        console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: %s %s, %lu bytes", s_file_name,
+                        s_up_overwrite ? "replaced" : "stored", (unsigned long)s_up_len);
         s_stats.files++;
         data_end();
         reply("226 File stored on SINTRAN.");
@@ -1088,7 +1114,7 @@ static void store_pass(void)
 
 /**
  * @brief STOR NAME.TYPE: the file goes to the SINTRAN user of the folder, as NAME:TYPE.
- *        SINTRAN creates it when it does not exist.
+ *        A new file is made; one that exists is replaced.
  */
 static void cmd_stor(const char *args)
 {
@@ -1113,6 +1139,7 @@ static void cmd_stor(const char *args)
     s_up_len = 0;
     s_up_too_long = false;
     s_up_writing = false;
+    s_up_overwrite = false;
     s_up_system = p.system;
     const char *slash = strrchr(args, '/');
     (void)transfer_begin(XFER_STORE, (slash != NULL) ? slash + 1 : args);
@@ -1346,7 +1373,7 @@ static void command(const char *line)
         reply(" set to even parity on the way in, as SINTRAN keeps text; TYPE I: bytes unchanged.");
         reply(" CONV (or SITE CONV) switches names to SINTRAN's NAME:TYPE;1 and back.");
         reply(" SITE TABLE switches LIST to SINTRAN's own table and back.");
-        reply(" STOR writes a new file (up to 1 MB); SINTRAN refuses one that exists.");
+        reply(" STOR writes a file (up to 1 MB); one that exists is replaced.");
         reply("214 End");
         return;
     }

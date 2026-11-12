@@ -474,9 +474,36 @@ static void pend_add(const char *fmt, ...)
 }
 
 /**
+ * @brief One access group as SINTRAN's FILE-STATISTICS prints it, for example
+ *        "FRIEND ACCESS : READ, WRITE, APPEND, COMMON, DIRECTORY", or NONE when the group
+ *        grants nothing. Inside a group R is bit 0, W bit 1, A bit 2, C bit 3, D bit 4.
+ *        The words were read off D100's own FILE-STAT of STARTX3:MODE (access 003777),
+ *        2026-11-11; NONE is from a SINTRAN printout quoted in RetroIO's tests.
+ */
+static void access_line(const char *group, unsigned bits)
+{
+    static const char *const names[5] = { "READ", "WRITE", "APPEND", "COMMON", "DIRECTORY" };
+    char text[64];
+    size_t len = 0;
+    text[0] = '\0';
+    for (unsigned i = 0; i < 5u; i++)
+    {
+        if ((bits & (1u << i)) != 0u)
+        {
+            int n = snprintf(&text[len], sizeof text - len, "%s%s", (len > 0u) ? ", " : "", names[i]);
+            if (n > 0)
+            {
+                len += (size_t)n;
+            }
+        }
+    }
+    pend_add("           %s ACCESS : %s\r\n", group, (len > 0u) ? text : "NONE");
+}
+
+/**
  * @brief One file as SINTRAN shows it. The version (";1") and the file number SINTRAN
  *        prints are not in the entry libcosmos hands over (libxmsg, 2026-11-11), so they are
- *        left out; the access word is shown raw, as its bits are not decoded yet.
+ *        left out.
  */
 static void entry_text(const FaFileEntry *e)
 {
@@ -496,7 +523,12 @@ static void entry_text(const FaFileEntry *e)
     {
         pend_add("           (CONTIGUOUS FILE)\r\n");
     }
-    pend_add("           ACCESS WORD : %06o (octal, not decoded yet)\r\n", (unsigned)e->access);
+    /* The access word holds three groups of five bits: PUBLIC in bits 10-14, FRIEND in
+     * 5-9, OWN in 0-4 (RetroIO SintranAccessForm, from the SINTRAN reference manual
+     * @SET-FILE-ACCESS). SINTRAN prints them in that order. */
+    access_line("PUBLIC", (unsigned)(e->access >> 10));
+    access_line("FRIEND", (unsigned)(e->access >> 5));
+    access_line("OWN", (unsigned)e->access);
     pend_add("           OPENED %u TIME%s\r\n", (unsigned)e->open_total, (e->open_total == 1u) ? "" : "S");
     if (date_text(e->created, date, sizeof date) > 0)
     {

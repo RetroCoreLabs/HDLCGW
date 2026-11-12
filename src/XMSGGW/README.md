@@ -154,8 +154,8 @@ The escape key stops a running command at once: the output, and SINTRAN's work t
 client's stop call), so the next command can start straight away.
 
 Not shown yet: the file number and version (`;1`) SINTRAN prints, which are not in the entry the
-file client hands over, and the access lines (`PUBLIC ACCESS : READ`...), shown as the raw access
-word because its bits are not decoded yet.
+file client hands over. The access lines (`PUBLIC ACCESS : READ`, `FRIEND ACCESS : ...`,
+`OWN ACCESS : ...`) are printed in SINTRAN's own words.
 
 Tested 2026-11-11: LIST-FILES with no filter, `:MODE` (18 files) and `:SYMB` (17), on D100 and on
 D102 through D100; FILE-STAT for one file and for `:MODE`, its lines matching SINTRAN's own for the

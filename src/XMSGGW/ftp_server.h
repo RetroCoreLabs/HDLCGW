@@ -72,11 +72,14 @@ typedef struct
     uint32_t logins;        /**< good logins */
     uint32_t bad_logins;    /**< wrong user or password */
     uint32_t listings;      /**< LIST/NLST sent */
-    uint32_t files;         /**< files sent (RETR) */
-    bool user_on;           /**< an FTP user is connected now */
+    uint32_t files;         /**< files sent (RETR) or stored (STOR) */
+    bool user_on;           /**< an FTP client is connected now */
+    char user[32];          /**< with user_on: the gateway user logged in; "" before login */
+    char remote[16];        /**< with user_on: the client's IP address */
+    uint32_t on_ms;         /**< with user_on: milliseconds since it connected */
 } ftp_server_stats;
 
-/** @brief Read the counters. */
+/** @brief Read the counters and who is on. Any task (INFO calls it from the node task). */
 void ftp_server_get_stats(ftp_server_stats *out);
 
 #endif /* FTP_SERVER_H */

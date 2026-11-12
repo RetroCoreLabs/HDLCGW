@@ -22,6 +22,7 @@
 #include <libxmsg/xrout/xrout_names_walk.h>
 
 #include "file_console.h"
+#include "ftp_server.h"
 #include "sintran_accounts.h"
 #include <libxmsg/xrout/xrout_walk.h>
 
@@ -319,7 +320,29 @@ static void svc_link_info(void *ctx, TermLinkInfo *li)
 static int svc_info_more(void *ctx, char *buf, size_t cap)
 {
     (void)ctx;
-    int n = snprintf(buf, cap, "XMSGGW %s, built %s %s\r\n", XMSGGW_VERSION, __DATE__, __TIME__);
+    /* INFO runs in the node task, the FTP server in the telnet task: ftp_server_get_stats
+     * copies a record the server keeps under a lock. */
+    ftp_server_stats f;
+    ftp_server_get_stats(&f);
+    char on[96];
+    if (!f.user_on)
+    {
+        (void)snprintf(on, sizeof on, "nobody on");
+    }
+    else
+    {
+        (void)snprintf(on, sizeof on, "%s from %s, on for %lu s",
+                       (f.user[0] != '\0') ? f.user : "(not logged in yet)", f.remote,
+                       (unsigned long)(f.on_ms / 1000u));
+    }
+    int n = snprintf(buf, cap,
+                     "XMSGGW %s, built %s %s\r\n"
+                     "FTP: %s\r\n"
+                     "FTP since start: %lu connections (%lu turned away), %lu logins (%lu wrong), "
+                     "%lu listings, %lu files\r\n",
+                     XMSGGW_VERSION, __DATE__, __TIME__, on, (unsigned long)f.sessions,
+                     (unsigned long)f.refused, (unsigned long)f.logins, (unsigned long)f.bad_logins,
+                     (unsigned long)f.listings, (unsigned long)f.files);
     return (n < 0) ? 0 : ((size_t)n >= cap ? (int)cap - 1 : n);
 }
 

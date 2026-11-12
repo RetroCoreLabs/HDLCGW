@@ -54,7 +54,7 @@ jobs:
           cp build/HDLCGW/boot_app0.bin             out/boot_app0.bin
           ESPTOOL=$(ls -d ~/.arduino15/packages/esp32/tools/esptool_py/*/ | tail -n 1)esptool
           "$ESPTOOL" --chip esp32s2 merge-bin -o out/full.bin \
-            --flash-mode dio --flash-freq 80m --flash-size 4MB \
+            --flash-mode keep --flash-freq keep --flash-size keep \
             0x1000 out/bootloader.bin 0x8000 out/partitions.bin 0xe000 out/boot_app0.bin \
             0x10000 out/HDLCGW.bin 0x150000 out/XMSGGW.bin
           ls -l out

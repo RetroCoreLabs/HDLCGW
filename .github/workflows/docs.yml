@@ -30,6 +30,8 @@ jobs:
           python-version: "3.12"
       - name: Install MkDocs
         run: pip install -r src/docs-site/requirements.txt
+      - name: Check the contents lists are up to date
+        run: python3 src/tools/gen_toc.py --check
       - name: Write the pages
         run: python3 src/tools/gen_docs.py build-site
       - name: Build site

@@ -5,6 +5,21 @@ synchronous HDLC line as HDLCGW. Where HDLCGW passes line frames to a PC, XMSGGW
 itself with libxmsg: LAPB to the machine, terminal sessions for telnet users, and (later) COSMOS
 file access.
 
+<!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
+**Contents**
+
+- [Status](#status)
+- [Telnet](#telnet)
+- [FTP](#ftp)
+  - [Every FTP command](#every-ftp-command)
+- [Files on the console](#files-on-the-console)
+- [USB console](#usb-console)
+- [Tasks](#tasks)
+- [Building](#building)
+- [First start](#first-start)
+
+<!-- /contents -->
+
 ## Status
 
 Runs on the board. Tested on the bench against the D100 emulator (node 100), XMSGGW as node 101

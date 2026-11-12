@@ -7,6 +7,16 @@ No open defects (2026-11-09 12:40). One known capacity limit, L1 below, kept by 
 decision: this phase of the design stops at 307200 bit/s (983000 needs the BUSY signal of the
 PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by the host.
 
+<!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
+**Contents**
+
+- [The TCP findings of 2026-11-09 (first sustained TCP run 10:42, last fix 12:35)](#the-tcp-findings-of-2026-11-09-first-sustained-tcp-run-1042-last-fix-1235)
+  - [L1 (was T1) - whole line frames dropped on the way to the TCP peer when the CPU runs out](#l1-was-t1---whole-line-frames-dropped-on-the-way-to-the-tcp-peer-when-the-cpu-runs-out)
+  - [T2 - the TCP connection stops, and the ESP keeps a dead peer (CLOSED 12:35)](#t2---the-tcp-connection-stops-and-the-esp-keeps-a-dead-peer-closed-1235)
+  - [T3 - bad frames off the line during TCP traffic (CLOSED 12:35)](#t3---bad-frames-off-the-line-during-tcp-traffic-closed-1235)
+
+<!-- /contents -->
+
 ## The TCP findings of 2026-11-09 (first sustained TCP run 10:42, last fix 12:35)
 
 Setup: ESP build 03:48:38, TCP SERVER 1362, MIRROR OFF, PC test tool as TCP client

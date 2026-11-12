@@ -200,7 +200,7 @@ All of them, as `ftp_server.cpp` handles them. Commands are not case sensitive. 
 | anything else | `502 Command not implemented.` |
 
 A file name may also be written `NAME:TYPE`. Limits: one FTP user at a time (a second gets
-`421`); a session with no command and no transfer for 5 minutes is closed with `421`; a data
+`421`); a session with no command and no transfer for 30 minutes is closed with `421`; a data
 connection that has not opened after 10 seconds is given up with `425`.
 
 An admin sets each gateway user's SINTRAN account on the `XMSGGW>` command line:

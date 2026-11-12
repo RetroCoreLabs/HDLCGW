@@ -44,8 +44,10 @@
 /** Passive-mode data port. One FTP user at a time, so one fixed port is enough. */
 #define FTP_SERVER_DATA_PORT 2121
 
-/** A control connection with no command for this long is closed (RFC 959 leaves it open). */
-#define FTP_SERVER_IDLE_MS (5u * 60u * 1000u)
+/** A control connection with no command and no transfer for this long is closed (RFC 959
+ *  leaves it open). It frees the one FTP place from a client left connected; 30 minutes so
+ *  that a user who is only reading is not thrown out (Ronny, 2026-11-12; was 5). */
+#define FTP_SERVER_IDLE_MS (30u * 60u * 1000u)
 
 /** How long a LIST or RETR waits for the client to open the data connection. */
 #define FTP_SERVER_DATA_WAIT_MS 10000u

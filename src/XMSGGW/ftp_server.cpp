@@ -23,7 +23,7 @@
 #include <libxmsg/auth/auth_user.h>
 
 #include "console_out.h"
-#include "file_fetch.h"
+#include "file_job.h"
 #include "names.h"
 #include "node_task.h"
 #include "settings.h"
@@ -76,8 +76,8 @@ typedef enum
 typedef enum
 {
     XFER_LISTING = 0, /**< s_listing: the machine and user folders */
-    XFER_FILE,        /**< a SINTRAN file, as file_fetch.h brings it in */
-    XFER_DIR          /**< a SINTRAN user's files, as file_fetch.h lists them */
+    XFER_FILE,        /**< a SINTRAN file, as file_job.h brings it in */
+    XFER_DIR          /**< a SINTRAN user's files, as file_job.h lists them */
 } xfer_kind;
 
 /** A SIZE or MDTM waiting for SINTRAN's answer (the control connection is not read meanwhile). */
@@ -90,6 +90,14 @@ typedef enum
 
 /** Listing entries formatted per pass while sending a user's files. */
 #define DIR_BATCH 8u
+
+/** The FTP job's byte ring. A file streams through it, so its size is no limit on the file;
+ *  it only has to cover a client that stops reading for a while (WiFi is far faster than
+ *  the HDLC line). A ring that fills fails the transfer rather than send a broken file. */
+#define FTP_JOB_DATA (256u * 1024u)
+
+/** The FTP job's entry ring (a listing streams through it as well). */
+#define FTP_JOB_ENTRIES 256u
 
 /** Bytes handed to the socket per pass while sending a file. */
 #define FILE_CHUNK 1024u
@@ -132,7 +140,9 @@ static bool s_dir_names_only = false; /* XFER_DIR: NLST (names) rather than LIST
 static char s_dir_owner[SINTRAN_ACCOUNT_FIELD_MAX + 1u]; /* XFER_DIR: the owner column */
 static stat_wait s_stat = STAT_NONE;
 static char s_dir_glob[64];           /* XFER_DIR: "CHAT*" from "NLST CHAT*"; "" = every file */
-static FaFileEntry *s_dir = NULL;     /* DIR_BATCH, PSRAM */
+static FileJob *s_job = NULL;         /* the FTP server's SINTRAN file job (file_job.h) */
+static size_t s_chunk_len = 0;        /* XFER_FILE: bytes in s_chunk taken from the job */
+static size_t s_chunk_off = 0;        /* XFER_FILE: of those, bytes already written */
 
 static char *s_listing = NULL;        /* LISTING_SIZE, PSRAM */
 static uint8_t *s_chunk = NULL;       /* FILE_CHUNK, PSRAM: keeps the telnet task's stack small */
@@ -153,12 +163,11 @@ int ftp_server_init(void)
     {
         s_chunk = (uint8_t *)heap_caps_malloc(FILE_CHUNK, MALLOC_CAP_SPIRAM);
     }
-    if (s_dir == NULL)
+    if (s_job == NULL)
     {
-        s_dir = (FaFileEntry *)heap_caps_calloc(DIR_BATCH, sizeof(FaFileEntry), MALLOC_CAP_SPIRAM);
+        s_job = file_job_create("FTP", FTP_JOB_DATA, FTP_JOB_ENTRIES);
     }
-    return (s_listing != NULL && s_names != NULL && s_chunk != NULL && s_dir != NULL
-            && file_fetch_init() == 0) ? 0 : -1;
+    return (s_listing != NULL && s_names != NULL && s_chunk != NULL && s_job != NULL) ? 0 : -1;
 }
 
 void ftp_server_get_stats(ftp_server_stats *out)
@@ -222,11 +231,13 @@ static void data_end(void)
     }
     if ((s_xfer == XFER_FILE || s_xfer == XFER_DIR) && s_data != DATA_IDLE)
     {
-        file_fetch_release();
+        file_job_release(s_job);
     }
     s_data = DATA_IDLE;
     s_mode = MODE_NONE;
     s_file_sent = 0;
+    s_chunk_len = 0;
+    s_chunk_off = 0;
     s_dir_sent = 0;
     data_flush();
 }
@@ -249,7 +260,7 @@ static void session_end(const char *why)
     if (s_stat != STAT_NONE)
     {
         s_stat = STAT_NONE;
-        file_fetch_release();
+        file_job_release(s_job);
     }
     memset(&s_cwd, 0, sizeof s_cwd);
 }
@@ -573,7 +584,7 @@ static int dir_start(const place *p, const char *filter)
     int rc = -1;
     if (sintran_account_get(s_user_name, s_dir_owner, password) == 0)
     {
-        rc = file_fetch_list(p->system, s_dir_owner, password, filter);
+        rc = file_job_start(s_job, true, p->system, s_dir_owner, password, filter);
     }
     memset(password, 0, sizeof password);
     return rc;
@@ -644,7 +655,7 @@ static void cmd_list(const char *args, bool names_only)
     s_dir_names_only = names_only;
     if (!transfer_begin(XFER_DIR, "the file list"))
     {
-        file_fetch_release();
+        file_job_release(s_job);
     }
 }
 
@@ -669,30 +680,31 @@ static void cmd_stat(const char *args, stat_wait which)
 /** @brief A SIZE / MDTM under way: reply once SINTRAN has answered. */
 static void stat_pass(void)
 {
-    file_fetch_status st;
-    file_fetch_get(&st);
-    if (st.state != FILE_FETCH_DONE && st.state != FILE_FETCH_FAILED)
+    file_job_status st;
+    file_job_get(s_job, &st);
+    if (st.state != FILE_JOB_ENDED)
     {
         return;
     }
     stat_wait which = s_stat;
     s_stat = STAT_NONE;
-    if (st.state == FILE_FETCH_FAILED)
+    if (st.result != 0)
     {
         char why[96];
-        file_fetch_reason(&st, why, sizeof why);
-        file_fetch_release();
+        file_job_reason(&st, why, sizeof why);
+        file_job_release(s_job);
         replyf("550 %s: %s.", s_file_name, why);
         return;
     }
-    if (st.entries == 0u || file_fetch_entries(0, s_dir, 1) != 1u)
+    FaFileEntry first;
+    bool found = file_job_take_entry(s_job, &first);
+    file_job_release(s_job);
+    if (!found)
     {
-        file_fetch_release();
         replyf("550 %s: no such file.", s_file_name);
         return;
     }
-    file_fetch_release();
-    const FaFileEntry *e = &s_dir[0];
+    const FaFileEntry *e = &first;
     if (which == STAT_SIZE)
     {
         if (!e->has_bytes)
@@ -736,7 +748,7 @@ static void cmd_retr(const char *args)
         return;
     }
     if (sintran_account_get(s_user_name, user, password) != 0
-        || file_fetch_start(p.system, user, password, s_file_name) != 0)
+        || file_job_start(s_job, false, p.system, user, password, s_file_name) != 0)
     {
         memset(password, 0, sizeof password);
         data_end();
@@ -746,7 +758,7 @@ static void cmd_retr(const char *args)
     memset(password, 0, sizeof password);
     if (!transfer_begin(XFER_FILE, file))
     {
-        file_fetch_release();
+        file_job_release(s_job);
     }
 }
 
@@ -756,22 +768,25 @@ static void cmd_retr(const char *args)
  */
 static void dir_send(void)
 {
-    file_fetch_status st;
-    file_fetch_get(&st);
-    size_t n = file_fetch_entries(s_dir_sent, s_dir, DIR_BATCH);
-    for (size_t i = 0; i < n; i++)
+    /* The state first: when it already says ENDED, every entry is in the ring, so an empty
+     * ring after taking means the list is complete. */
+    file_job_status st;
+    file_job_get(s_job, &st);
+    FaFileEntry e;
+    size_t taken = 0;
+    while (taken < DIR_BATCH && file_job_take_entry(s_job, &e))
     {
+        taken++;
         if (s_dir_glob[0] != '\0')
         {
             char name[32];
-            dir_ftp_name(&s_dir[i], name, sizeof name);
+            dir_ftp_name(&e, name, sizeof name);
             if (fnmatch(s_dir_glob, name, FNM_CASEFOLD) != 0)
             {
-                s_dir_sent++;
                 continue;
             }
         }
-        int len = dir_line(&s_dir[i], (char *)s_chunk, FILE_CHUNK);
+        int len = dir_line(&e, (char *)s_chunk, FILE_CHUNK);
         if (len <= 0 || (size_t)len >= FILE_CHUNK)
         {
             continue;
@@ -784,23 +799,23 @@ static void dir_send(void)
         }
         s_dir_sent++;
     }
-    if (n > 0u || s_dir_sent < st.entries)
+    if (taken == DIR_BATCH || st.state != FILE_JOB_ENDED)
     {
         return;
     }
-    if (st.state == FILE_FETCH_DONE)
+    if (st.result == 0)
     {
-        console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: file list sent, %lu files%s",
-                        (unsigned long)s_dir_sent, st.list_full ? " (more not kept)" : "");
+        console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: file list sent, %lu files%s", (unsigned long)s_dir_sent,
+                        (st.entries_lost > 0u) ? " (some dropped)" : "");
         data_end();
         s_stats.listings++;
-        reply(st.list_full ? "226 File list sent; it was cut at the gateway's limit."
-                           : "226 File list sent.");
+        reply((st.entries_lost > 0u) ? "226 File list sent; the gateway fell behind and dropped some."
+                                     : "226 File list sent.");
     }
-    else if (st.state == FILE_FETCH_FAILED)
+    else
     {
         char why[96];
-        file_fetch_reason(&st, why, sizeof why);
+        file_job_reason(&st, why, sizeof why);
         data_end();
         replyf("451 The file list failed: %s.", why);
     }
@@ -809,39 +824,48 @@ static void dir_send(void)
 /** @brief Write the next file bytes; end the transfer when the file is all sent or failed. */
 static void file_send(void)
 {
-    file_fetch_status st;
-    file_fetch_get(&st);
-    if (s_file_sent < st.have)
+    if (s_chunk_off == s_chunk_len)
     {
-        size_t n = file_fetch_copy(s_file_sent, s_chunk, FILE_CHUNK);
+        s_chunk_len = file_job_take_bytes(s_job, s_chunk, FILE_CHUNK);
+        s_chunk_off = 0;
         if (s_type_ascii)
         {
-            for (size_t i = 0; i < n; i++)
+            for (size_t i = 0; i < s_chunk_len; i++)
             {
                 s_chunk[i] &= 0x7Fu;   /* TYPE A: strip the parity bit */
             }
         }
-        size_t w = (n > 0u) ? s_dconn.write(s_chunk, n) : 0u;
+    }
+    if (s_chunk_off < s_chunk_len)
+    {
+        /* Bytes taken from the job are gone from it, so a part write keeps the rest here. */
+        size_t w = s_dconn.write(&s_chunk[s_chunk_off], s_chunk_len - s_chunk_off);
+        s_chunk_off += w;
         s_file_sent += (uint32_t)w;
-        if (n > 0u && w == 0u && !s_dconn.connected())
+        if (w == 0u && !s_dconn.connected())
         {
             data_end();
             reply("426 The data connection broke during the transfer.");
         }
         return;
     }
-    if (st.state == FILE_FETCH_DONE)
+    file_job_status st;
+    file_job_get(s_job, &st);
+    if (st.state != FILE_JOB_ENDED || s_file_sent < st.bytes)
     {
-        console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: %s sent, %lu bytes", s_file_name,
-                        (unsigned long)s_file_sent);
+        return;
+    }
+    if (st.result == 0 && !st.data_lost)
+    {
+        console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: %s sent, %lu bytes", s_file_name, (unsigned long)s_file_sent);
         data_end();
         s_stats.files++;
         reply("226 File sent.");
     }
-    else if (st.state == FILE_FETCH_FAILED)
+    else
     {
         char why[96];
-        file_fetch_reason(&st, why, sizeof why);
+        file_job_reason(&st, why, sizeof why);
         data_end();
         replyf("550 %s: %s.", s_file_name, why);
     }

@@ -19,6 +19,7 @@
 #include <libcosmos/fa/fa_client.h>
 
 #include "console_out.h"
+#include "file_job.h"
 #include "sintran_accounts.h"
 
 /** What the running command does. */
@@ -33,9 +34,7 @@ typedef enum
 typedef enum
 {
     ST_IDLE = 0,
-    ST_ASKED,       /**< command() took it; the pass starts the client */
-    ST_RUNNING,     /**< the client works; output flows */
-    ST_ENDED        /**< the client is over; the last output is being fed */
+    ST_RUNNING      /**< the job is the command's: output flows, or the job is being stopped */
 } cmd_state;
 
 /** Entries kept between the client and the console (the console drains far faster than
@@ -70,35 +69,22 @@ const char FILE_CONSOLE_HELP[] =
 
 static file_console_resolve s_resolve = NULL;
 static uint16_t s_own = 0;
-static FaClient *s_client = NULL;      /* PSRAM */
-static FaFileEntry *s_ring = NULL;     /* ENTRY_RING, PSRAM */
-static uint8_t *s_data = NULL;         /* DATA_RING, PSRAM */
+static FileJob *s_job = NULL;          /* the console's SINTRAN file job (file_job.h) */
 static char *s_pend = NULL;            /* PEND_MAX, PSRAM: text not yet taken by the console */
 
-/* The command. Node task only: command(), cancel and the client callbacks all run there. */
+/* The command. Node task only: command(), cancel and the pass all run there. */
 static cmd_state s_state = ST_IDLE;
 static cmd_kind s_kind = CMD_LIST;
 static int s_place = -1;
 static bool s_cancelled = false;       /* the user left or pressed escape; output is dropped */
 static bool s_closing = false;         /* the closing lines are written */
-static bool s_cancel_sent = false;     /* fa_client_cancel called for this command */
 static bool s_pend_raw = false;        /* s_pend holds file bytes: console_command_raw */
-static uint16_t s_system = 0;
 static char s_machine[24];
-static char s_user[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
-static char s_password[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
-static char s_filter[FA_CLIENT_SPEC];
-static char s_dir[24];                 /* "PACK-ONE", from the directory callback */
-static char s_dir_user[24];            /* "SYSTEM", from the directory callback */
-static uint32_t s_ring_in = 0;
-static uint32_t s_ring_out = 0;
-static uint32_t s_ring_lost = 0;
-static uint32_t s_data_in = 0;
-static uint32_t s_data_out = 0;
-static bool s_data_lost = false;
+static char s_user[SINTRAN_ACCOUNT_FIELD_MAX + 1u];   /* the user as typed or filled in */
+static file_job_status s_st;           /* the job, as the pass last saw it */
+static FaFileEntry s_next;             /* an entry taken from the job, not yet shown */
+static bool s_next_ok = false;
 static uint32_t s_files = 0;
-static int s_result = 0;
-static uint16_t s_sintran_error = 0;
 static size_t s_pend_len = 0;
 static size_t s_pend_off = 0;
 
@@ -106,23 +92,15 @@ int file_console_init(file_console_resolve resolve, uint16_t own)
 {
     s_resolve = resolve;
     s_own = own;
-    if (s_client == NULL)
+    if (s_job == NULL)
     {
-        s_client = (FaClient *)heap_caps_calloc(1, sizeof(FaClient), MALLOC_CAP_SPIRAM);
-    }
-    if (s_ring == NULL)
-    {
-        s_ring = (FaFileEntry *)heap_caps_calloc(ENTRY_RING, sizeof(FaFileEntry), MALLOC_CAP_SPIRAM);
-    }
-    if (s_data == NULL)
-    {
-        s_data = (uint8_t *)heap_caps_malloc(DATA_RING, MALLOC_CAP_SPIRAM);
+        s_job = file_job_create("console", DATA_RING, ENTRY_RING);
     }
     if (s_pend == NULL)
     {
         s_pend = (char *)heap_caps_malloc(PEND_MAX, MALLOC_CAP_SPIRAM);
     }
-    return (s_client != NULL && s_ring != NULL && s_data != NULL && s_pend != NULL) ? 0 : -1;
+    return (s_job != NULL && s_pend != NULL) ? 0 : -1;
 }
 
 /* ------------------------------------------------------------ parsing */
@@ -305,7 +283,7 @@ int file_console_command(int place, const char *gw_user, const char *line, char 
     {
         return 0;
     }
-    if (s_client == NULL)
+    if (s_job == NULL)
     {
         (void)snprintf(out, cap, "No memory for file commands.\r\n");
         return 1;
@@ -317,8 +295,8 @@ int file_console_command(int place, const char *gw_user, const char *line, char 
     }
     char machine[sizeof s_machine];
     char user[sizeof s_user];
-    char password[sizeof s_password];
-    char filter[sizeof s_filter];
+    char password[SINTRAN_ACCOUNT_FIELD_MAX + 1u];
+    char filter[FA_CLIENT_SPEC];
     bool pw_given = false;
     const char *why = parse_target(args, machine, user, password, &pw_given, filter);
     /* FILE-STAT with no file: every file, as LIST-FILES (Ronny, 2026-11-11). */
@@ -366,15 +344,27 @@ int file_console_command(int place, const char *gw_user, const char *line, char 
         (void)snprintf(out, cap, "%s.\r\n", why);
         return 1;
     }
+    /* A job still stopping from the last command (escape) is not free yet. */
+    int rc = file_job_start(s_job, kind != CMD_COPY, system, user, password, filter);
+    memset(password, 0, sizeof password);
+    console_out_log(CONTROL_FRAME_LOG_INFO, "File command %d: %s(%s) \"%s\": %s", (int)kind, machine, user,
+                    filter, (rc == 0) ? "asked" : "busy");
+    if (rc != 0)
+    {
+        (void)snprintf(out, cap, "The last file command is still stopping; try again.\r\n");
+        return 1;
+    }
     s_kind = kind;
     s_place = place;
-    s_system = system;
     (void)snprintf(s_machine, sizeof s_machine, "%s", machine);
     (void)snprintf(s_user, sizeof s_user, "%s", user);
-    (void)snprintf(s_password, sizeof s_password, "%s", password);
-    (void)snprintf(s_filter, sizeof s_filter, "%s", filter);
-    memset(password, 0, sizeof password);
-    s_state = ST_ASKED;
+    s_next_ok = false;
+    s_files = 0;
+    s_pend_len = s_pend_off = 0;
+    s_closing = false;
+    s_cancelled = false;
+    memset(&s_st, 0, sizeof s_st);
+    s_state = ST_RUNNING;
     out[0] = '\0';
     return 2;
 }
@@ -383,63 +373,10 @@ void file_console_cancel(int place)
 {
     if (s_state != ST_IDLE && place == s_place)
     {
-        /* Ronny (2026-11-11): escape MUST stop the listing. The pass stops the client
-         * (fa_client_cancel); its output is dropped meanwhile. */
+        /* Ronny (2026-11-11): escape MUST stop the listing. The pass lets go of the job,
+         * which stops SINTRAN (fa_client_cancel); output is dropped meanwhile. */
         s_cancelled = true;
     }
-}
-
-/* ------------------------------------------------- client callbacks (node task) */
-
-static void cb_opened(void *ctx, uint32_t length)
-{
-    (void)ctx;
-    (void)length;
-}
-
-static void cb_data(void *ctx, uint32_t offset, const uint8_t *bytes, size_t n)
-{
-    (void)ctx;
-    (void)offset;   /* the pieces come in order */
-    for (size_t i = 0; i < n; i++)
-    {
-        if (s_data_in - s_data_out >= DATA_RING)
-        {
-            s_data_lost = true;   /* the console fell behind: the rest is dropped */
-            return;
-        }
-        s_data[s_data_in % DATA_RING] = bytes[i];
-        s_data_in++;
-    }
-}
-
-static void cb_directory(void *ctx, const char *directory, const char *user)
-{
-    (void)ctx;
-    (void)snprintf(s_dir, sizeof s_dir, "%s", directory);
-    /* SINTRAN's full user name: "SYST" typed is "SYSTEM" here, as SINTRAN's own
-     * LIST-FILES prints it (D100 to D102, 2026-11-11). */
-    (void)snprintf(s_dir_user, sizeof s_dir_user, "%s", user);
-}
-
-static void cb_entry(void *ctx, const FaFileEntry *e)
-{
-    (void)ctx;
-    if (s_ring_in - s_ring_out >= ENTRY_RING)
-    {
-        s_ring_lost++;
-        return;
-    }
-    s_ring[s_ring_in % ENTRY_RING] = *e;
-    s_ring_in++;
-}
-
-static void cb_done(void *ctx, int result, uint16_t sintran_error)
-{
-    (void)ctx;
-    s_result = result;
-    s_sintran_error = sintran_error;
-    s_state = ST_ENDED;
 }
 
 /* --------------------------------------------------------------- output */
@@ -508,8 +445,8 @@ static void access_line(const char *group, unsigned bits)
 static void entry_text(const FaFileEntry *e)
 {
     char date[48];
-    pend_add("FILE : %s.(%s:%s)%s:%s\r\n", s_machine, (s_dir[0] != '\0') ? s_dir : "?",
-             (s_dir_user[0] != '\0') ? s_dir_user : s_user, e->name,
+    pend_add("FILE : %s.(%s:%s)%s:%s\r\n", s_machine, (s_st.directory[0] != '\0') ? s_st.directory : "?",
+             (s_st.user[0] != '\0') ? s_st.user : s_user, e->name,
              e->type);
     if (s_kind != CMD_STAT)
     {
@@ -556,48 +493,50 @@ static void entry_text(const FaFileEntry *e)
 /** @brief COPY-TERM: the next file bytes, bit 7 cleared, zero bytes dropped (the console
  *         text call stops at a zero). Line ends pass as they are: a MODE file read
  *         2026-11-11 ends its lines CR LF. */
-static void data_text(void)
+static bool data_text(void)
 {
-    s_pend_raw = true;   /* only called with s_pend empty: the piece is all file bytes */
-    while (s_data_out != s_data_in && s_pend_len + 1u < PEND_MAX)
+    /* Only called with s_pend empty: the piece is all file bytes. */
+    size_t n = file_job_take_bytes(s_job, (uint8_t *)s_pend, PEND_MAX - 1u);
+    size_t kept = 0;
+    for (size_t i = 0; i < n; i++)
     {
-        uint8_t b = (uint8_t)(s_data[s_data_out % DATA_RING] & 0x7Fu);
-        s_data_out++;
+        uint8_t b = (uint8_t)((uint8_t)s_pend[i] & 0x7Fu);
         if (b != 0u)
         {
-            s_pend[s_pend_len++] = (char)b;
+            s_pend[kept++] = (char)b;
         }
     }
-    s_pend[s_pend_len] = '\0';
+    s_pend[kept] = '\0';
+    s_pend_len = kept;
+    s_pend_raw = true;
+    return n > 0u;
 }
 
 /** @brief The closing line(s), once the client is over and everything else is out. */
 static void end_text(void)
 {
-    if (s_result == FA_CLIENT_EREFUSED)
+    if (s_st.result != 0)
     {
-        pend_add("SINTRAN refused it: error %u (octal %o).\r\n", (unsigned)s_sintran_error,
-                 (unsigned)s_sintran_error);
-    }
-    else if (s_result != 0)
-    {
-        pend_add("It failed: XMSG error %d.\r\n", s_result);
+        char why[96];
+        file_job_reason(&s_st, why, sizeof why);
+        why[0] = (char)toupper((unsigned char)why[0]);
+        pend_add("%s.\r\n", why);
     }
     else if (s_kind != CMD_COPY && s_files == 0u)
     {
         pend_add("No such file.\r\n");
     }
-    if (s_kind == CMD_COPY && s_data_lost)
+    if (s_kind == CMD_COPY && s_st.data_lost)
     {
         pend_add("\r\n<the console fell behind; the rest of the file was dropped>\r\n");
     }
-    if (s_kind == CMD_COPY && s_result == 0)
+    if (s_kind == CMD_COPY && s_st.result == 0)
     {
         pend_add("\r\n");   /* the prompt on its own line even when the file has no last line end */
     }
-    if (s_ring_lost > 0u)
+    if (s_st.entries_lost > 0u)
     {
-        pend_add("<%lu files dropped: the console fell behind>\r\n", (unsigned long)s_ring_lost);
+        pend_add("<%lu files dropped: the console fell behind>\r\n", (unsigned long)s_st.entries_lost);
     }
 }
 
@@ -634,87 +573,42 @@ static bool pend_flush(ConsoleSession *s)
 
 static void finish(void)
 {
-    memset(s_password, 0, sizeof s_password);
     s_state = ST_IDLE;
     s_place = -1;
     s_cancelled = false;
-    s_cancel_sent = false;
     s_closing = false;
-}
-
-/** @brief Start the client for an asked command. */
-static void start(XmsgNode *node, ConsoleSession *s, uint32_t now)
-{
-    FaClientConfig cfg;
-    FaClientCallbacks cb = { NULL, cb_opened, cb_data, cb_done, cb_directory, cb_entry };
-    s_dir[0] = '\0';
-    s_dir_user[0] = '\0';
-    s_ring_in = s_ring_out = s_ring_lost = 0;
-    s_data_in = s_data_out = 0;
-    s_data_lost = false;
-    s_files = 0;
-    s_result = 0;
-    s_sintran_error = 0;
-    s_pend_len = s_pend_off = 0;
-    fa_client_config_default(&cfg);
-    int rc = fa_client_init(s_client, &cfg, &cb);
-    /* The machine's own number as both node and system: the host relays it (file_fetch.cpp,
-     * verified for D100 and for D102 through D100, 2026-11-11). */
-    if (rc == XMSG_OK)
-    {
-        rc = (s_kind == CMD_COPY)
-                 ? fa_client_read(s_client, node, s_system, s_system, s_user, s_user, s_password, s_filter, now)
-                 : fa_client_list(s_client, node, s_system, s_system, s_user, s_user, s_password, s_filter, now);
-    }
-    memset(s_password, 0, sizeof s_password);
-    console_out_log(CONTROL_FRAME_LOG_INFO, "File command %d: %s(%s) \"%s\": start %d", (int)s_kind, s_machine,
-                    s_user, s_filter, rc);
-    if (rc == XMSG_OK)
-    {
-        s_state = ST_RUNNING;
-        return;
-    }
-    s_result = rc;
-    s_state = ST_ENDED;
-    (void)s;
+    s_next_ok = false;
 }
 
 void file_console_pass(XmsgNode *node, ConsoleHost *host, uint32_t now)
 {
-    if (s_state == ST_IDLE || node == NULL || host == NULL)
+    (void)node;   /* the job runs in file_job_pass_all */
+    (void)now;
+    if (s_state == ST_IDLE || host == NULL)
     {
         return;
     }
     ConsoleSession *s = console_host_session(host, s_place);
-    if (s_state == ST_ASKED)
-    {
-        if (s_cancelled)
-        {
-            finish();
-            return;
-        }
-        start(node, s, now);
-    }
     if (s_cancelled)
     {
-        /* Stop SINTRAN: the client tears the conversation down and ends with
-         * done(XMSG_ECANCELED); output is dropped until then. */
-        if (s_state == ST_RUNNING && !s_cancel_sent)
+        /* Stop SINTRAN: letting go of the job stops the client, which ends with
+         * done(XMSG_ECANCELED); output is dropped until the job is free again. */
+        file_job_release(s_job);
+        s_pend_len = s_pend_off = 0;
+        file_job_get(s_job, &s_st);
+        if (s_st.state == FILE_JOB_IDLE)
         {
-            s_cancel_sent = true;
-            int rc = fa_client_cancel(s_client, now);
-            console_out_log(CONTROL_FRAME_LOG_INFO, "File command stopped by the user: cancel %d", rc);
-        }
-        s_ring_out = s_ring_in;
-        s_data_out = s_data_in;
-        if (s_state == ST_ENDED)
-        {
+            console_out_log(CONTROL_FRAME_LOG_INFO, "File command stopped by the user");
             finish();
         }
         return;
     }
-    /* Feed: the waiting text first, then more from the entries or the file bytes. */
-    for (int round = 0; round < 8; round++)
+    /* The state first: when it already says ENDED, every entry and byte is in the job, so
+     * nothing more to take means the output is complete. */
+    file_job_get(s_job, &s_st);
+    bool ended = (s_st.state == FILE_JOB_ENDED);
+    bool drained = false;
+    for (int round = 0; round < 8 && !drained; round++)
     {
         if (!pend_flush(s))
         {
@@ -724,23 +618,26 @@ void file_console_pass(XmsgNode *node, ConsoleHost *host, uint32_t now)
         {
             return;
         }
+        if (!s_next_ok)
+        {
+            s_next_ok = file_job_take_entry(s_job, &s_next);
+        }
         /* The directory name comes AFTER the first file (fa_client.h): hold the first line
          * until it is in, or the walk is over (seen 2026-11-11: "(?:SYSTEM)" otherwise). */
-        if (s_ring_out != s_ring_in && (s_files > 0u || s_dir[0] != '\0' || s_state == ST_ENDED))
+        if (s_next_ok && (s_files > 0u || s_st.directory[0] != '\0' || ended))
         {
-            entry_text(&s_ring[s_ring_out % ENTRY_RING]);
-            s_ring_out++;
+            entry_text(&s_next);
+            s_next_ok = false;
             s_files++;
             continue;
         }
-        if (s_data_out != s_data_in)
+        if (!s_next_ok && data_text())
         {
-            data_text();
             continue;
         }
-        break;
+        drained = true;
     }
-    if (s_state != ST_ENDED || s_ring_out != s_ring_in || s_data_out != s_data_in || !pend_flush(s))
+    if (!drained || !ended || s_next_ok || !pend_flush(s))
     {
         return;
     }
@@ -757,5 +654,6 @@ void file_console_pass(XmsgNode *node, ConsoleHost *host, uint32_t now)
     {
         console_command_done(s);
     }
+    file_job_release(s_job);   /* ENDED and all shown: the job is free */
     finish();
 }

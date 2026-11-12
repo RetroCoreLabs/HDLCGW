@@ -346,6 +346,31 @@ static int svc_info_more(void *ctx, char *buf, size_t cap)
     return (n < 0) ? 0 : ((size_t)n >= cap ? (int)cap - 1 : n);
 }
 
+/**
+ * WHO's extra line: the FTP user, when one is connected. term_report_who() can only say "at
+ * the prompt" or "connected to <system>" in its last column, which is wrong for FTP, so the
+ * line is built here in the same columns (libxmsg term_report.c: "%c %4d %-16s %-27s %-12s"),
+ * with "FTP" where the terminal number goes and libxmsg's own time format.
+ */
+static int svc_who_more(void *ctx, char *buf, size_t cap)
+{
+    (void)ctx;
+    ftp_server_stats f;
+    ftp_server_get_stats(&f);
+    if (!f.user_on)
+    {
+        return 0;
+    }
+    char dur[16];
+    if (term_report_duration(f.on_ms / 1000u, dur, sizeof dur) < 0)
+    {
+        return 0;
+    }
+    int n = snprintf(buf, cap, "  %4s %-16s %-27s %-12s FTP\r\n", "FTP",
+                     (f.user[0] != '\0') ? f.user : "(login)", f.remote, dur);
+    return (n < 0) ? 0 : ((size_t)n >= cap ? (int)cap - 1 : n);
+}
+
 /* --------------------------------------------- XMSGGW's own commands */
 
 static bool s_restart = false;       /* RESTART asked; done once the text is out */
@@ -747,6 +772,7 @@ int gw_console_init(void)
     cfg.services.names_cancel = svc_names_cancel;
     cfg.services.link_info = svc_link_info;
     cfg.services.info_more = svc_info_more;
+    cfg.services.who_more = svc_who_more;
     cfg.services.command = svc_command;
     cfg.services.command_cancel = svc_command_cancel;
     cfg.services.help_user = FILE_CONSOLE_HELP;

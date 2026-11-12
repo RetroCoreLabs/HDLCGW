@@ -95,6 +95,11 @@ A SINTRAN file `NAME:TYPE` is named `NAME.TYPE` in FTP. A download is read whole
 through libcosmos' COSMOS file client into PSRAM (at most 1 MB) and sent to the client as it
 arrives. A file SINTRAN refuses gives `550` with SINTRAN's error number.
 
+`TYPE A` (ASCII, the start value) clears bit 7 of every byte, the parity bit SINTRAN text files
+carry. `TYPE I` (binary) sends the file unchanged. Neither changes line ends: SINTRAN text already
+ends its lines with CR LF. Uploads are not built yet: the COSMOS file client in libxmsg can read
+and list files but not write them.
+
 A folder listing walks SINTRAN's directory one file at a time: 253 files took 60 s
 (2026-11-11). Each version of a file is its own entry and the version number is not in it, so a
 name can appear more than once. The size is SINTRAN's byte count (0 for a device file); the date

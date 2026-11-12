@@ -13,6 +13,28 @@ An Arduino sketch, one board, two clock wires and two data wires to the line. It
 sibling of [RC422Dev](https://github.com/RetroCoreLabs/RC422Dev) (the Raspberry Pi Pico version)
 and speaks the same host protocol, so the same PC tools drive both.
 
+<!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
+**Contents**
+
+- [Why it exists](#why-it-exists)
+- [What you can use it for](#what-you-can-use-it-for)
+- [Status](#status)
+- [Prerequisites](#prerequisites)
+- [Wiring](#wiring)
+- [Quick start](#quick-start)
+- [Building from source](#building-from-source)
+- [Talking to the board](#talking-to-the-board)
+- [Commands](#commands)
+- [WiFi and TCP](#wifi-and-tcp)
+- [Current limitations](#current-limitations)
+- [About HDLC](#about-hdlc)
+- [Documentation](#documentation)
+- [Origins](#origins)
+- [Contributing](#contributing)
+- [Licence](#licence)
+
+<!-- /contents -->
+
 ## Why it exists
 
 Old minicomputers and terminals (Norsk Data, IBM SNA and others) talk HDLC or SDLC over a

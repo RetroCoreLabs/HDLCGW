@@ -7,6 +7,22 @@ Write what you see or what the meter says. `not measured` and `I do not know` ar
 
 ______________________________
 
+<!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
+**Contents**
+
+- [What to expect (a guess from the ND manual and the KiCad designs, NOT a fact about your wiring)](#what-to-expect-a-guess-from-the-nd-manual-and-the-kicad-designs-not-a-fact-about-your-wiring)
+- [Result so far: the beeps you measured](#result-so-far-the-beeps-you-measured)
+- [Result so far: the AM26LS31 driver chip](#result-so-far-the-am26ls31-driver-chip)
+- [Result so far: the AM26LV32 receiver chip](#result-so-far-the-am26lv32-receiver-chip)
+- [What is verified and what is assumed](#what-is-verified-and-what-is-assumed)
+- [Conclusion: the wiring to rebuild (from the code and your measurements)](#conclusion-the-wiring-to-rebuild-from-the-code-and-your-measurements)
+- [Check these against your ND documentation (the PDF may be wrong)](#check-these-against-your-nd-documentation-the-pdf-may-be-wrong)
+- [Measured pinout of your female DB-25 connector](#measured-pinout-of-your-female-db-25-connector)
+- [RS-485 modules](#rs-485-modules)
+- [Your notes](#your-notes)
+
+<!-- /contents -->
+
 ## What to expect (a guess from the ND manual and the KiCad designs, NOT a fact about your wiring)
 
 Pin numbers in this section are REAL ND pin numbers, not the numbers printed on your boards. The table

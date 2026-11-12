@@ -5,17 +5,26 @@ alone with two wires, then against a second gateway, then under full traffic for
 time. Every step says what to connect, what to type, what to expect and what a wrong answer
 means.
 
-## Contents
+<!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
+**Contents**
 
-1. [What is being tested](#1-what-is-being-tested)
-2. [Why a loopback](#2-why-a-loopback)
-3. [Wiring](#3-wiring)
-4. [Quick test from the console](#4-quick-test-from-the-console)
-5. [Traffic test with hdlc-loopback](#5-traffic-test-with-hdlc-loopback)
-6. [Two gateways: HDLCGW and RC422Dev](#6-two-gateways-hdlcgw-and-rc422dev)
-7. [How to read the results](#7-how-to-read-the-results)
-8. [Measured so far](#8-measured-so-far)
-9. [When it does not work](#9-when-it-does-not-work)
+- [1. What is being tested](#1-what-is-being-tested)
+- [2. Why a loopback](#2-why-a-loopback)
+- [3. Wiring](#3-wiring)
+- [4. Quick test from the console](#4-quick-test-from-the-console)
+- [5. Traffic test with hdlc-loopback](#5-traffic-test-with-hdlc-loopback)
+  - [Run it](#run-it)
+- [6. Two gateways: HDLCGW and RC422Dev](#6-two-gateways-hdlcgw-and-rc422dev)
+- [7. How to read the results](#7-how-to-read-the-results)
+- [8. Measured so far](#8-measured-so-far)
+  - [8a. Long run: two minutes per rate, 1024-byte frames, 12000-byte window](#8a-long-run-two-minutes-per-rate-1024-byte-frames-12000-byte-window)
+  - [8b. Two gateways: HDLCGW and RC422Dev, first fair run](#8b-two-gateways-hdlcgw-and-rc422dev-first-fair-run)
+  - [8c. Two gateways, control frames only, after the glitch filter](#8c-two-gateways-control-frames-only-after-the-glitch-filter)
+  - [8d. Two gateways, full case sweep at four rates](#8d-two-gateways-full-case-sweep-at-four-rates)
+  - [8e. Two gateways at 983000, where the time goes (2026-11-09 night)](#8e-two-gateways-at-983000-where-the-time-goes-2026-11-09-night)
+- [9. When it does not work](#9-when-it-does-not-work)
+
+<!-- /contents -->
 
 ## 1. What is being tested
 

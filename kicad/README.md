@@ -3,6 +3,22 @@
 Written 2026-11-10 so a new person (or a new LLM session) can carry on without the old chat.
 Each line says whether it was **verified** (and how) or is an **assumption / guess**.
 
+<!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
+**Contents**
+
+- [What the board is](#what-the-board-is)
+- [Files here](#files-here)
+- [Wiring (real ND pin numbers, from the ND manual)](#wiring-real-nd-pin-numbers-from-the-nd-manual)
+- [MAX3490E (verified from the datasheet, not from a web summary)](#max3490e-verified-from-the-datasheet-not-from-a-web-summary)
+- [WEMOS S2 mini (verified from the official wemos.cc page, image, dimension PDF, schematic PDF)](#wemos-s2-mini-verified-from-the-official-wemoscc-page-image-dimension-pdf-schematic-pdf)
+- [The cable that confused the measurements](#the-cable-that-confused-the-measurements)
+- [ND card facts (from the ND Service Handbook, ND-107300 and ND-107340 sections)](#nd-card-facts-from-the-nd-service-handbook-nd-107300-and-nd-107340-sections)
+- [DB-25 plug: what we know](#db-25-plug-what-we-know)
+- [Tools](#tools)
+- [Open items](#open-items)
+
+<!-- /contents -->
+
 ## What the board is
 
 - An interface between an ND-100 HDLC card (3015, ND-107300) or MEGALINK card (3023, ND-107340) and

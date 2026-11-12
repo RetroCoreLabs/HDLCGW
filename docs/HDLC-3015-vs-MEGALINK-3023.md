@@ -8,6 +8,19 @@ Sources, all read from the page images:
 
 Anything not on those pages is marked "not verified".
 
+<!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
+**Contents**
+
+- [Scope decision (Ronny, 2026-11-06)](#scope-decision-ronny-2026-11-06)
+- [Short answer](#short-answer)
+- [Side by side](#side-by-side)
+- [Pins whose job changes between the cards](#pins-whose-job-changes-between-the-cards)
+- [What this means for the Pico board](#what-this-means-for-the-pico-board)
+- [If the board supports the busy signal (MEGALINK)](#if-the-board-supports-the-busy-signal-megalink)
+- [Not verified](#not-verified)
+
+<!-- /contents -->
+
 ## Scope decision (Ronny, 2026-11-06)
 
 Aim for at most 307.2 kbps and leave out the MEGALINK's special 983 kbps mode, for simplicity. The

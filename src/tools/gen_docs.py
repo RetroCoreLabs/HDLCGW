@@ -26,6 +26,8 @@ import shutil
 import subprocess
 import sys
 
+import gen_toc   # same folder; Python puts the script's folder on the path
+
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 REPO = 'https://github.com/RetroCoreLabs/HDLCGW'
 BLOB = REPO + '/blob/master/'
@@ -430,6 +432,14 @@ def write_header_page(path, text, items, includes, used_by, out_docs):
     return purpose, funcs
 
 
+def copy_page(src, dest):
+    """Copy one hand-written page into the site, without gen_toc.py's contents list."""
+    with open(os.path.join(ROOT, src), encoding='utf-8') as f:
+        text = f.read()
+    with open(dest, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(gen_toc.strip(text))
+
+
 def main():
     out = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build-site'))
     # On Windows the output may be on another drive than the checkout, and commonpath then
@@ -444,13 +454,15 @@ def main():
     os.makedirs(docs)
 
     # Hand-written pages, at their own paths.
-    shutil.copyfile(os.path.join(ROOT, 'README.md'), os.path.join(docs, 'index.md'))
+    # The contents list gen_toc.py writes into each big file is left out: the site shows its
+    # own beside every page, and two lists on one page are noise.
+    copy_page('README.md', os.path.join(docs, 'index.md'))
     known = set(tracked('*.md'))
     guides = [p for p, _ in GUIDES if p in known] + ([BUGS] if BUGS in known else [])
     for p in guides:
         dest = os.path.join(docs, p)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        shutil.copyfile(os.path.join(ROOT, p), dest)
+        copy_page(p, dest)
     os.makedirs(os.path.join(docs, 'assets'))
     shutil.copyfile(os.path.join(ROOT, 'src/assets/hdlcgw.svg'),
                     os.path.join(docs, 'assets/hdlcgw.svg'))

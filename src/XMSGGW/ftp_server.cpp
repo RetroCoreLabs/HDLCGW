@@ -9,6 +9,7 @@
 ***************************************************************************/
 #include "ftp_server.h"
 
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -120,6 +121,11 @@ static WiFiClient s_dconn;            /* the data connection while DATA_SENDING 
 static uint32_t s_data_deadline = 0;
 static size_t s_listing_len = 0;
 static uint32_t s_file_sent = 0;      /* XFER_FILE: bytes written to the data connection */
+/* TYPE A (true) or TYPE I (false). ASCII clears bit 7, the parity bit SINTRAN text files
+ * carry, on every byte sent; binary sends the bytes as SINTRAN holds them (Ronny,
+ * 2026-11-12). No line-end change in either: SINTRAN text already ends lines with CR LF.
+ * ASCII is the start value, as RFC 959 section 3.1.1.1 sets it. */
+static bool s_type_ascii = true;
 static char s_file_name[80];          /* XFER_FILE, SIZE, MDTM: "CHATLG2:SYMB" */
 static uint32_t s_dir_sent = 0;       /* XFER_DIR: entries written to the data connection */
 static bool s_dir_names_only = false; /* XFER_DIR: NLST (names) rather than LIST */
@@ -711,8 +717,8 @@ static void stat_pass(void)
 /**
  * @brief RETR: fetch a SINTRAN file and send it. The FTP name NAME.TYPE is SINTRAN's
  *        NAME:TYPE (Ronny, 2026-11-11: Windows does not allow ':' in a file name).
- *        The bytes go out as SINTRAN holds them: no line-ending or character change in
- *        either TYPE A or TYPE I.
+ *        TYPE I sends the bytes as SINTRAN holds them; TYPE A clears bit 7 of each
+ *        (file_send). Neither changes line ends.
  */
 static void cmd_retr(const char *args)
 {
@@ -808,6 +814,13 @@ static void file_send(void)
     if (s_file_sent < st.have)
     {
         size_t n = file_fetch_copy(s_file_sent, s_chunk, FILE_CHUNK);
+        if (s_type_ascii)
+        {
+            for (size_t i = 0; i < n; i++)
+            {
+                s_chunk[i] &= 0x7Fu;   /* TYPE A: strip the parity bit */
+            }
+        }
         size_t w = (n > 0u) ? s_dconn.write(s_chunk, n) : 0u;
         s_file_sent += (uint32_t)w;
         if (n > 0u && w == 0u && !s_dconn.connected())
@@ -986,6 +999,7 @@ static void cmd_pass(const char *password)
     s_logged_in = true;
     s_stats.logins++;
     memset(&s_cwd, 0, sizeof s_cwd);
+    s_type_ascii = true;
     console_out_log(CONTROL_FRAME_LOG_INFO, "FTP: '%s' logged in", s_user_name);
     reply("230 Logged in. The folders are the SINTRAN machines.");
 }
@@ -1091,7 +1105,28 @@ static void command(const char *line)
     }
     if (is_cmd(line, "TYPE", &a))
     {
-        reply("200 Type set.");   /* nothing is transferred yet that the type would change */
+        /* "A" or "A N" is ASCII; "I" and "L 8" are binary. Other forms (EBCDIC, the
+         * Telnet and carriage-control formats, other byte sizes) are refused. */
+        char t0 = (char)toupper((unsigned char)a[0]);
+        const char *rest = &a[(a[0] != '\0') ? 1 : 0];
+        while (*rest == ' ')
+        {
+            rest++;
+        }
+        if (t0 == 'A' && (rest[0] == '\0' || ((rest[0] == 'N' || rest[0] == 'n') && rest[1] == '\0')))
+        {
+            s_type_ascii = true;
+            reply("200 Type set to A: the parity bit is stripped.");
+        }
+        else if ((t0 == 'I' && rest[0] == '\0') || (t0 == 'L' && strcmp(rest, "8") == 0))
+        {
+            s_type_ascii = false;
+            reply("200 Type set to I: files are sent unchanged.");
+        }
+        else
+        {
+            reply("504 Only TYPE A and TYPE I are supported.");
+        }
         return;
     }
     if (is_cmd(line, "MODE", &a) || is_cmd(line, "STRU", &a))

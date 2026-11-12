@@ -1,0 +1,51 @@
+# Build the documentation site and publish it to GitHub Pages
+# (https://retrocorelabs.github.io/HDLCGW/) on every push to master.
+# A pull request builds and checks it without publishing.
+# The pages come from the headers and the Markdown files: src/tools/gen_docs.py writes them,
+# src/docs-site/ holds the settings.
+name: Docs
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install MkDocs
+        run: pip install -r src/docs-site/requirements.txt
+      - name: Write the pages
+        run: python3 src/tools/gen_docs.py build-site
+      - name: Build site
+        run: mkdocs build --strict -f build-site/mkdocs.yml -d "${{ runner.temp }}/site"
+      - uses: actions/upload-pages-artifact@v5
+        if: github.event_name != 'pull_request'
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -38,7 +38,7 @@
 #include "../common/board.h"
 
 #ifndef XMSGGW_VERSION
-#define XMSGGW_VERSION "0.1.0"
+#define XMSGGW_VERSION "0.1.1"
 #endif
 
 /** Console places: telnet users and SINTRAN callers together, one term.cpp

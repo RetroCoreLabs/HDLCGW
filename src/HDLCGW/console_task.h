@@ -17,7 +17,7 @@
 #include <stdbool.h>
 
 /** Firmware version, printed in the boot banner and sent in HELLO_REPLY. */
-#define HDLCGW_VERSION "0.2.0"
+#define HDLCGW_VERSION "0.2.1"
 
 /** @brief What the USB serial port is being used for. Same three modes as RC422Dev. */
 typedef enum

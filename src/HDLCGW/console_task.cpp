@@ -24,6 +24,25 @@
 #include "libhdlc/esp32s2/spi_tx_task.h"
 #include "usb_tx_task.h"
 #include "wifi_task.h"
+#include "../common/board.h"
+
+/** @brief board_ask_ops.print: the debug console writes to Serial directly. */
+static void ask_print(const char *text)
+{
+    Serial.print(text);
+}
+
+/** @brief board_ask_ops.wifi_join: a network typed in is meant to be used: WiFi on. */
+static void ask_wifi_join(void)
+{
+    wifi_task_set_enabled(true);
+}
+
+/* Questions for a missing setting when the console opens (../common/board.h).
+ * HDLCGW has no node number. */
+static const board_ask_ops ASK_OPS = {
+    ask_print, wifi_task_set_ssid, wifi_task_set_pass, ask_wifi_join, NULL, NULL,
+};
 
 console_mode g_console_mode = CONSOLE_FORWARDING;
 console_frame_stats g_sent_stats;
@@ -645,7 +664,12 @@ static HOT_PATH_CODE void handle_forwarding_input(uint8_t c)
                 g_esc_count = 0;
                 g_console_mode = CONSOLE_DEBUG;
                 Serial.println("\r\n*** Debug console. EXIT returns to forwarding. ***");
-                console_task_show_prompt();
+                /* Whoever opens the console is the admin: ask for the WiFi
+                 * network if none is stored (../common/board.h). */
+                if (!board_ask_start(&ASK_OPS))
+                {
+                    console_task_show_prompt();
+                }
             }
             return;
         }
@@ -686,6 +710,19 @@ static void handle_debug_input(char c)
     else if (c == '\n' || c == '\r')
     {
         Serial.println();
+        if (board_ask_active())
+        {
+            /* The line answers a question (board_ask_start); empty skips it. */
+            g_input[g_input_pos] = '\0';
+            board_ask_answer(g_input);
+            memset(g_input, 0, (size_t)g_input_pos);   /* may be a password */
+            g_input_pos = 0;
+            if (!board_ask_active() && g_console_mode == CONSOLE_DEBUG)
+            {
+                console_task_show_prompt();
+            }
+            return;
+        }
         if (g_input_pos > 0)
         {
             g_input[g_input_pos] = '\0';
@@ -700,7 +737,7 @@ static void handle_debug_input(char c)
     else if (g_input_pos < INPUT_MAX)
     {
         g_input[g_input_pos++] = c;
-        Serial.write(c);
+        Serial.write(board_ask_hidden() ? '*' : c);
     }
     else
     {
@@ -904,7 +941,9 @@ void console_task_show_prompt(void)
     {
         Serial.printf("[%d:%d]", rx_len, tx_len);
     }
-    Serial.print(g_hdlc_mode ? "@" : "#");
+    /* "HDLC# " (Ronny, 2026-11-12; was "# "). As before, "@" takes the
+     * place of "#" while HDLC decoding is on, and ">" follows while ECHO is on. */
+    Serial.print(g_hdlc_mode ? "HDLC@" : "HDLC#");
     if (g_echo_enabled)
     {
         Serial.print(">");

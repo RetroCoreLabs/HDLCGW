@@ -15,10 +15,15 @@ clock). It has a male DB-25 that plugs straight into the HDLC socket on the back
 | [`src/XMSGGW/`](src/XMSGGW/README.md) | **XMSGGW firmware.** The board becomes an XMSG node of its own (node 101, called D101 on the bench). Telnet users log in to it and reach SINTRAN systems; SINTRAN users reach it with `CONNECT-TO`. |
 | [`kicad/`](kicad/README.md) | **The board drawing** in KiCad 9: the schematic, the S2 Mini symbol and footprint, the wiring with the real ND pin numbers, and what is known and still open ([todo](kicad/todo.md)). There is no PCB layout yet. |
 | [`docs/`](docs/README.md) | Datasheets (ESP32-S2, MAX3483-MAX3491), the [cable measurements](docs/HDLC-Cable-Measurements.md), the [3015 vs MEGALINK 3023](docs/HDLC-3015-vs-MEGALINK-3023.md) comparison, and the wiring drawings for the [PCB](docs/HDLC-PCB-ESP32-Wiring.svg) and the [old breadboard](docs/HDLC-Breadboard-Wiring.svg). |
+| [`src/common/`](src/common/board.h) | Code both firmwares build in: switching between them, the button, the LEDs and the settings they share. |
 | `src/external/libxmsg/` | The **libxmsg** library as a git submodule held at one exact version. It holds the XMSG protocol and, under `src/libhdlc`, the line driver, the HDLC decoder and the USB control frames. |
 
-Only one firmware runs on the board at a time. Pick HDLCGW to bridge the line to a PC program,
-or XMSGGW to let the board be an XMSG node by itself.
+The board holds both firmwares at once, HDLCGW in slot 1 and XMSGGW in slot 2, and runs one of
+them: HDLCGW to bridge the line to a PC program, XMSGGW to let the board be an XMSG node by
+itself. `FIRMWARE SWITCH`, or the button held while the board starts, changes which one runs. The
+WiFi network and the line speed are shared; each firmware keeps its other settings. How to
+install them, from a release, from the browser or from source:
+[Installing the firmware](docs/INSTALL.md).
 
 ## Building
 
@@ -31,4 +36,6 @@ or XMSGGW to let the board be an XMSG node by itself.
 4. Open the sketch folder in the Arduino IDE, or from inside it:
    `arduino-cli compile --fqbn esp32:esp32:lolin_s2_mini .`
 
-Each firmware's README explains how to flash it, its commands and how it was tested.
+Each firmware's README explains its commands and how it was tested.
+[Installing the firmware](docs/INSTALL.md) says where each one goes: **an upload from the
+Arduino IDE always writes slot 1**, so XMSGGW goes to slot 2 with esptool.

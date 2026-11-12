@@ -27,7 +27,7 @@ Runs on the board. Tested on the bench against the D100 emulator (node 100), XMS
 
 - the LAPB link comes up, and the reachability ("are you there?") exchange is answered, with 0 bad
   frames;
-- telnet on port 23: login, the `XMSGGW> ` command line, `CONNECT D100`, a SINTRAN login and
+- telnet on port 23: login, the `XMSG> ` command line, `CONNECT D100`, a SINTRAN login and
   `LOGOUT` (back at the prompt, error 0), `EXIT`;
 - 8 telnet users at once, a 9th turned away; two SINTRAN logins at the same time;
 - a client that drops its TCP connection ends its SINTRAN session at once.
@@ -38,7 +38,7 @@ On 2026-11-10, after the move to libxmsg's shared console, checked live: login, 
 `DELUSER`, and `LI-SYS D101` at D100's prompt (the real count: 1 in use, 7 free with one telnet
 user, from libxmsg ef0e53a on).
 
-Last build: flash 77%, static RAM 30%. The node and the session buffers live in PSRAM (2 MB);
+Last build (2026-11-12): flash 82% of its slot, static RAM 30%. The node and the session buffers live in PSRAM (2 MB);
 internal RAM is short.
 
 Line speed: the line runs at whatever `BAUD` stored, and at 38400 when nothing is stored. The bench
@@ -60,14 +60,15 @@ Not yet:
 
 ## Telnet
 
-Join the WiFi network first (`WIFI SSID`, `WIFI PASS`, `WIFI CONNECT` on the USB console; with
-none stored, the network HDLCGW stored on the same board is used). Then `telnet <board ip>`.
+Join the WiFi network first: the USB text console asks for it when none is stored (it lists the
+networks it can see), or `WIFI SSID`, `WIFI PASS`, `WIFI CONNECT`. The network is shared with
+HDLCGW, so one set in either firmware is used by both. Then `telnet <board ip>`.
 
 A new board has one user: **`admin`, password `admin`**. The first login must set a new password.
 Passwords are kept as PBKDF2-SHA256 hashes (2,000 rounds, about 0.5 s per check on this chip; the
 library default of 100,000 took 23 s) in NVS, never as text.
 
-Commands at the `XMSGGW> ` prompt:
+Commands at the `XMSG> ` prompt:
 
 | Command | What it does |
 |---|---|
@@ -85,6 +86,10 @@ Commands at the `XMSGGW> ` prompt:
 | `RESETPW name` | set a new password, to be changed at the next login (admin) |
 | `NODE [n]` | show or store our node number, used after `RESTART` (admin) |
 | `RESTART` | restart the gateway; every session ends (admin) |
+| `FIRMWARE [SWITCH]` | show both firmware slots; `SWITCH` restarts into HDLCGW (admin) |
+
+An admin who logs in while no node number is stored is asked for one: a number typed next is
+stored (`RESTART` then starts the link), any other command skips the question.
 
 The same login and command line answer a SINTRAN user who runs `CONNECT-TO D101` (up to 4 at
 once). Login and commands are libxmsg's shared console (`console/console.h`); `gw_console.cpp`
@@ -274,7 +279,7 @@ same files; COPY-TERM of LOAD-MODE:MODE; a missing file; escape during a running
 ## USB console
 
 Control frames from a host program (HELLO, COMMAND, LOG_LEVEL, STAT_PUSH, PING; replies, LOG,
-EVENT and STAT back), the same way HDLCGW works, or a text console after three ESC presses. STAT
+EVENT and STAT back), the same way HDLCGW works, or a text console after three ESC presses (prompt `XMSG#`; telnet shows `XMSG>`). STAT
 frames use HDLCGW's field order; the TCP fields are always 0. No login: whoever holds the USB
 cable is the administrator.
 
@@ -290,17 +295,20 @@ cable is the administrator.
 | `TTYP [n]` | terminal type for new sessions (0 default; 93 = TDV 2200) |
 | `PARITY [ON\|OFF]` | even parity on typed bytes for new sessions (ON default) |
 | `ALIAS [<name> <system number>\|DEL <name>]` | names `CONNECT` takes, besides the ones learned from the host |
-| `BAUD <value>\|MAX\|DEFAULT` | the transmit clock (stored) |
+| `BAUD <value>\|MAX\|DEFAULT` | the transmit clock (stored, shared with HDLCGW) |
 | `CLOCK ON\|OFF` | run or stop the transmit clock |
 | `INSPECT [BAD [0..3]]` | the last frame, or the n-th newest bad one |
 | `LOG [0..5]` | 0 off, 1 error, 2 warn, 3 info, 4 debug, 5 trace |
 | `TASK` | the running tasks |
 | `INFO` | build, chip and memory |
 | `RESET` | restart the gateway |
+| `FIRMWARE [SWITCH]` | show both firmware slots; `SWITCH` restarts into HDLCGW (also on telnet: `FIRMWARE` for every user, `SWITCH` for the admin) |
 | `EXIT` | leave the text console, back to control frames |
 
-Stored in NVS: the node number, line rate, Flags1 counters, port-word seed, WiFi network, terminal
-type (namespace `xmsggw`) and the users (namespace `xmsgusr`).
+Stored in NVS: the node number, Flags1 counters, port-word seed, terminal type, parity and aliases
+(namespace `xmsggw`), the users (namespace `xmsgusr`) and their SINTRAN users (namespace
+`xmsgftp`). The WiFi network and the line rate are shared with HDLCGW (namespace `board`,
+`src/common/board.h`); the first start of this build copies them from the old `xmsggw` keys.
 
 ## Tasks
 
@@ -325,10 +333,16 @@ arduino-cli compile --clean --fqbn esp32:esp32:lolin_s2_mini --warnings all .
 
 Use `--clean`: without it the build time that `INFO` shows can come from an older build.
 
+XMSGGW lives in slot 2. **Do not upload it from the Arduino IDE**: an upload always writes slot 1
+and would replace HDLCGW. Write the built `XMSGGW.ino.bin` to `0x150000` with esptool, then start
+it with `FIRMWARE SWITCH` (from HDLCGW) or the button. [Installing the firmware](../../docs/INSTALL.md)
+has the commands.
+
 ## First start
 
-With no node number stored the link stays down. Send `NODE <n>`, then `RESET` (as a COMMAND
-control frame, or on the text console).
+With no node number stored the link stays down. The USB text console asks for it when it opens
+(and for the WiFi network, when none is stored), and so does an admin telnet login. Or send
+`NODE <n>`, then `RESET` (as a COMMAND control frame, or on the text console).
 
 The bench gateway is node **101**, named **D101** (Ronny, 2026-11-09): `NODE 101`, then `RESET`.
 The name has no setting yet.

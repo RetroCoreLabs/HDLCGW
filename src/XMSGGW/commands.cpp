@@ -30,6 +30,7 @@
 #include "settings.h"
 #include "telnet_task.h"
 #include "usb_tx_task.h"
+#include "../common/board.h"
 
 /* Same limits as HDLCGW: 983000 is the most the SPI clock divider gives
  * cleanly; the design rate is 307200. */
@@ -45,6 +46,7 @@ static void handle_info(const char *args);
 static void handle_stat(const char *args);
 static void handle_log(const char *args);
 static void handle_reset(const char *args);
+static void handle_firmware(const char *args);
 static void handle_inspect(const char *args);
 static void handle_exit(const char *args);
 static void handle_node(const char *args);
@@ -70,13 +72,14 @@ static const command COMMANDS[] =
     { "TTYP",    "TTYP [n] - Terminal type for new sessions (0 default; 93 = TDV 2200)", handle_ttyp },
     { "PARITY",  "PARITY [ON|OFF] - Even parity on typed bytes for new sessions (ON default)", handle_parity },
     { "ALIAS",   "ALIAS [<name> <system number>|DEL <name>] - names CONNECT takes", handle_alias },
-    { "BAUD",    "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored)", handle_baud },
+    { "BAUD",    "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored, shared with HDLCGW)", handle_baud },
     { "CLOCK",   "CLOCK ON|OFF - Run or stop the transmit clock",              handle_clock },
     { "INSPECT", "INSPECT [BAD [0..3]] - Last frame, or n-th newest bad one",  handle_inspect },
     { "LOG",     "LOG [0..5] - 0 off, 1 error, 2 warn, 3 info, 4 debug, 5 trace", handle_log },
     { "TASK",    "List running tasks",                                         handle_task },
     { "INFO",    "Build, chip and memory",                                     handle_info },
     { "RESET",   "Restart the gateway",                                        handle_reset },
+    { "FIRMWARE", "FIRMWARE [SWITCH] - Show both firmware slots, or restart into HDLCGW", handle_firmware },
     { "EXIT",    "Leave the text console, back to control frames",             handle_exit },
 };
 
@@ -110,7 +113,7 @@ static bool set_bit_rate(uint32_t rate)
         return false;
     }
     spi_tx_task_set_bit_rate(rate);
-    if (settings_set_rate(rate) != 0)
+    if (board_set_rate(rate) != 0)
     {
         console_out_println("Rate set, but could not be stored.");
     }
@@ -316,6 +319,36 @@ static void handle_log(const char *args)
  * @brief RESET command: flush the reply so the host sees it, then restart.
  * @param[in] args  Unused.
  */
+/**
+ * @brief FIRMWARE command: show what both slots hold, or (SWITCH) restart
+ *        into the other one (../common/board.h).
+ * @param[in] args  NULL / empty, or SWITCH.
+ */
+static void handle_firmware(const char *args)
+{
+    char text[512];
+
+    if (args == NULL || *args == '\0')
+    {
+        board_firmware_report(text, sizeof text);
+        console_out_printf("%s", text);
+        return;
+    }
+    if (strcasecmp(args, "SWITCH") != 0)
+    {
+        console_out_println("Usage: FIRMWARE [SWITCH]");
+        return;
+    }
+    if (board_firmware_switch(text, sizeof text) != 0)
+    {
+        console_out_printf("%s", text);
+        return;
+    }
+    console_out_printf("%s", text);
+    console_out_flush();
+    ESP.restart();
+}
+
 static void handle_reset(const char *args)
 {
     (void)args;
@@ -638,10 +671,9 @@ static void handle_wifi(const char *args)
     if (args == NULL || *args == '\0' || strcasecmp(args, "STATUS") == 0)
     {
         telnet_task_stats ts;
-        char ssid[SETTINGS_SSID_SIZE];
-        char pass[SETTINGS_PASS_SIZE];
-        int src = settings_wifi(ssid, pass);
-        static const char *const SRC[] = { "XMSGGW's own", "HDLCGW's stored" };
+        char ssid[BOARD_SSID_SIZE];
+        char pass[BOARD_PASS_SIZE];
+        int src = board_wifi(ssid, pass);
         telnet_task_get_stats(&ts);
         memset(pass, 0, sizeof pass);
         if (src < 0)
@@ -651,7 +683,7 @@ static void handle_wifi(const char *args)
         }
         else
         {
-            console_out_printf("WiFi network %s (%s settings), %s", ssid, SRC[src],
+            console_out_printf("WiFi network %s (shared with HDLCGW), %s", ssid,
                                ts.wifi_up ? "joined" : "not joined");
             if (ts.wifi_up)
             {
@@ -672,7 +704,7 @@ static void handle_wifi(const char *args)
     }
     if (strncasecmp(args, "SSID ", 5) == 0)
     {
-        if (settings_set_wifi_ssid(args + 5) != 0)
+        if (board_set_wifi_ssid(args + 5) != 0)
         {
             console_out_println("Not stored: 1 to 32 characters.");
             return;
@@ -683,7 +715,7 @@ static void handle_wifi(const char *args)
     if (strncasecmp(args, "PASS", 4) == 0 && (args[4] == ' ' || args[4] == '\0'))
     {
         const char *p = (args[4] == ' ') ? args + 5 : "";
-        if (settings_set_wifi_pass(p) != 0)
+        if (board_set_wifi_pass(p) != 0)
         {
             console_out_println("Not stored: at most 64 characters.");
             return;

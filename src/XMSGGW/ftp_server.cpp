@@ -449,7 +449,7 @@ static int resolve(const char *path, place *out, const char **why)
         {
             if (sintran_account_get(s_user_name, user, NULL) != 0)
             {
-                *why = "550 No SINTRAN user is set for you; an admin sets one with SINTRAN on the XMSGGW> command line.";
+                *why = "550 No SINTRAN user is set for you; an admin sets one with SINTRAN on the XMSG> command line.";
                 return -1;
             }
             if (strcasecmp(part, user) != 0)

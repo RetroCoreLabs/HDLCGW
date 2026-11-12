@@ -1,0 +1,33 @@
+{
+  "name": "HDLCGW and XMSGGW",
+  "version": "newest release",
+  "new_install_prompt_erase": true,
+  "new_install_improv_wait_time": 0,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S2",
+      "parts": [
+        {
+          "path": "bootloader.bin",
+          "offset": 4096
+        },
+        {
+          "path": "partitions.bin",
+          "offset": 32768
+        },
+        {
+          "path": "boot_app0.bin",
+          "offset": 57344
+        },
+        {
+          "path": "HDLCGW.bin",
+          "offset": 65536
+        },
+        {
+          "path": "XMSGGW.bin",
+          "offset": 1376256
+        }
+      ]
+    }
+  ]
+}

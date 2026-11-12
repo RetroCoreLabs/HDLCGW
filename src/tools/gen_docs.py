@@ -36,12 +36,14 @@ BLOB = REPO + '/blob/master/'
 LIBRARIES = [
     ('src/HDLCGW', 'HDLCGW'),
     ('src/XMSGGW', 'XMSGGW'),
+    ('src/common', 'Shared by both'),
 ]
 
 # The hand-written pages, in menu order, with their menu titles. Left out on purpose:
 # src/HDLCGW/CLAUDE.md (notes for the AI assistant, not for readers) and kicad/todo.md (a
 # work list). BUGS.md goes in as "Known defects".
 GUIDES = [
+    ('docs/INSTALL.md', 'Installing the firmware'),
     ('src/HDLCGW/README.md', 'HDLCGW firmware'),
     ('src/HDLCGW/LOOPBACK-TEST.md', 'HDLCGW loopback test'),
     ('src/XMSGGW/README.md', 'XMSGGW firmware'),
@@ -473,6 +475,12 @@ def main():
         shutil.copyfile(os.path.join(ROOT, p), dest)
     for f in ('extra.css', 'mermaid-init.js'):
         shutil.copyfile(os.path.join(ROOT, 'src/docs-site', f), os.path.join(docs, 'assets', f))
+    # The browser flash page and its manifests. The .bin files are not in git: the docs
+    # workflow downloads the newest release's into the same folder after this script.
+    flash = tracked('src/docs-site/flash/*')
+    os.makedirs(os.path.join(docs, 'flash'))
+    for p in flash:
+        shutil.copyfile(os.path.join(ROOT, p), os.path.join(docs, 'flash', os.path.basename(p)))
 
     # Reference pages.
     headers = headers_of_sketches()
@@ -545,6 +553,8 @@ def main():
          'nav:',
          '  - Home: index.md',
          '  - API index: api/index.md']
+    if 'src/docs-site/flash/index.md' in flash:
+        y.append('  - Flash from the browser: flash/index.md')
     guide_pages = [(p, t) for p, t in GUIDES if p in guides]
     if guide_pages:
         y.append('  - Guides:')

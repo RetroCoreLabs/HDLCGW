@@ -25,6 +25,7 @@
 #include "console_out.h"
 #include "ftp_server.h"
 #include "settings.h"
+#include "../common/board.h"
 
 #define WIFI_RETRY_MS 20000u
 #define HOSTNAME "xmsggw"
@@ -51,8 +52,8 @@ typedef struct
 
 static conn *s_conn = NULL;            /* TELNET_TASK_USERS of them, in PSRAM */
 
-static char s_ssid[SETTINGS_SSID_SIZE];
-static char s_pass[SETTINGS_PASS_SIZE];
+static char s_ssid[BOARD_SSID_SIZE];
+static char s_pass[BOARD_PASS_SIZE];
 static volatile bool s_reconnect = false;
 static bool s_wifi_begun = false;
 static bool s_wifi_was_up = false;
@@ -66,7 +67,7 @@ static telnet_task_stats s_stats;
 void telnet_task_init(void)
 {
     memset(&s_stats, 0, sizeof s_stats);
-    s_stats.settings_source = settings_wifi(s_ssid, s_pass);
+    s_stats.settings_source = board_wifi(s_ssid, s_pass);
     /* PSRAM: internal RAM is full once WiFi is linked in. calloc gives
      * zeroed memory, so every state starts FREE; the C++ members are made
      * in place below. */
@@ -350,7 +351,7 @@ static void run_wifi(uint32_t now)
     if (s_reconnect)
     {
         s_reconnect = false;
-        s_stats.settings_source = settings_wifi(s_ssid, s_pass);
+        s_stats.settings_source = board_wifi(s_ssid, s_pass);
         WiFi.disconnect(false, false);
         s_wifi_begun = false;
         up = false;

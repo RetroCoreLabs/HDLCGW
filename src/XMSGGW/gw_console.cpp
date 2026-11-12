@@ -1,5 +1,5 @@
 /**************************************************************************
-** GW_CONSOLE - the login and the XMSGGW> command line, libxmsg's console **
+** GW_CONSOLE - the login and the XMSG> command line, libxmsg's console  **
 **                                                                       **
 ** Built after libxmsg examples/host_tad_telnet/host_tad_telnet.c, which **
 ** runs the same console on a PC.                                        **
@@ -35,6 +35,7 @@
 #include "telnet_task.h"
 #include "term.h"
 #include "users.h"
+#include "../common/board.h"
 
 #ifndef XMSGGW_VERSION
 #define XMSGGW_VERSION "0.1.0"
@@ -66,6 +67,7 @@ static ConsoleSession *s_sessions = NULL;  /* PLACES, PSRAM */
 static ConsoleTadLine *s_tad = NULL;       /* GW_CONSOLE_TAD_LINES, PSRAM */
 static telnet_line s_tel[TELNET_TASK_USERS];
 static place_state s_place[PLACES];
+static bool s_ask_node[PLACES];   /* tel_logged_in asked this place for the node number */
 static AuthUser *s_users = NULL;           /* USERS_MAX, PSRAM: USERS and DELUSER */
 static char s_banner[64];
 static bool s_ok = false;
@@ -307,7 +309,7 @@ static void svc_link_info(void *ctx, TermLinkInfo *li)
     li->link_up = st.up;
     li->link_ready = st.ready;
     li->transport = "HDLC line (ESP32-S2)";
-    /* The rate the line really runs at; settings_rate() is 0 when none is stored. */
+    /* The rate the line really runs at; board_rate() is 0 when none is stored. */
     li->line_bps = spi_tx_task_bit_rate();
     li->line_is_tcp = false;
     li->frames_in = st.frames_in;
@@ -500,6 +502,35 @@ static int svc_command(void *ctx, int place, const char *line, AuthLevel level, 
 {
     const char *args = NULL;
     (void)ctx;
+    /* The answer to tel_logged_in's question: a number right after an admin login. */
+    if (place >= 0 && place < PLACES && s_ask_node[place])
+    {
+        uint16_t node = 0;
+        int rc = board_parse_node(line, &node);
+        s_ask_node[place] = false;
+        if (rc == -1)
+        {
+            (void)snprintf(out, cap, "A node number is 1 to 65535; NODE <n> sets it later.\r\n");
+            return 1;
+        }
+        if (rc == 0 && level == AUTH_LEVEL_ADMIN)
+        {
+            console_out_log(CONTROL_FRAME_LOG_INFO, "Console place %d: node number %u",
+                            place, (unsigned)node);
+            if (settings_set_node(node) != 0)
+            {
+                (void)snprintf(out, cap, "Could not store the node number.\r\n");
+            }
+            else
+            {
+                (void)snprintf(out, cap,
+                               "Node number %u stored. RESTART starts the link with it.\r\n",
+                               (unsigned)node);
+            }
+            return 1;
+        }
+        /* Not a number: an ordinary command, and the question is dropped. */
+    }
     /* LIST-FILES / FILE-STAT / COPY-TERM: every logged-in user. Not logged: the line can
      * carry a SINTRAN password. */
     ConsoleSession *cs = console_host_session(&s_host, place);
@@ -507,6 +538,32 @@ static int svc_command(void *ctx, int place, const char *line, AuthLevel level, 
     if (file_rc != 0)
     {
         return file_rc;
+    }
+    /* FIRMWARE: every logged-in user may look; SWITCH is for the admin, as RESTART. */
+    if (word_is(line, "FIRMWARE", &args))
+    {
+        if (args == NULL || *args == '\0')
+        {
+            board_firmware_report(out, cap);
+            return 1;
+        }
+        if (strcasecmp(args, "SWITCH") != 0)
+        {
+            (void)snprintf(out, cap, "FIRMWARE [SWITCH]\r\n");
+            return 1;
+        }
+        if (level != AUTH_LEVEL_ADMIN)
+        {
+            (void)snprintf(out, cap, "not allowed\r\n");
+            return 1;
+        }
+        console_out_log(CONTROL_FRAME_LOG_INFO, "Console place %d: %s", place, line);
+        if (board_firmware_switch(out, cap) == 0)
+        {
+            s_restart = true;
+            s_restart_at = millis() + 500u;   /* time for the text to reach the user */
+        }
+        return 1;
     }
     bool node = word_is(line, "NODE", &args);
     bool restart = !node && word_is(line, "RESTART", &args);
@@ -553,10 +610,37 @@ static int tel_write(void *ctx, const uint8_t *bytes, size_t len)
     return telnet_conn_write(t->conn, bytes, (int)len);
 }
 
+/**
+ * @brief A telnet user has logged in. An admin on a gateway with no node
+ *        number is asked for one (Ronny, 2026-11-12; ../common/board.h): the
+ *        link cannot start without it. The next line, if it is a number, is
+ *        the answer (svc_command); anything else is an ordinary command.
+ *        The core prints the prompt after this.
+ */
+static void tel_logged_in(void *ctx, const char *user)
+{
+    static const char ask[] =
+        "This gateway has no node number, so the XMSG link cannot start.\r\n"
+        "Type the node number now (1 to 65535), or any command to skip.\r\n";
+    telnet_line *t = (telnet_line *)ctx;
+    (void)user;
+    if (t->s == NULL || t->s->level != AUTH_LEVEL_ADMIN || settings_node() != 0u ||
+        t->s->place < 0 || t->s->place >= PLACES)
+    {
+        return;
+    }
+    s_ask_node[t->s->place] = true;
+    (void)telnet_conn_write(t->conn, (const uint8_t *)ask, (int)sizeof ask - 1);
+}
+
 static void tel_close(void *ctx, ConsoleClose why)
 {
     telnet_line *t = (telnet_line *)ctx;
     (void)why;
+    if (t->s != NULL && t->s->place >= 0 && t->s->place < PLACES)
+    {
+        s_ask_node[t->s->place] = false;
+    }
     t->s = NULL;         /* the session is the core's again (console.h) */
     t->closed = true;
     telnet_conn_close(t->conn);
@@ -591,6 +675,7 @@ static void telnet_pass(uint32_t now)
             line.kind = "telnet";
             line.write = tel_write;
             line.close = tel_close;
+            line.logged_in = tel_logged_in;
             line.describe = tel_describe;
             t->s = console_host_open(&s_host, &line, now);
             if (t->s == NULL && !t->closed)
@@ -748,7 +833,7 @@ int gw_console_init(void)
 
     console_config_default(&cfg);
     cfg.mode = CONSOLE_MODE_PROMPT;
-    cfg.prompt = "XMSGGW> ";
+    cfg.prompt = "XMSG> ";   /* Ronny, 2026-11-12; was "XMSGGW> " */
     node_task_get_status(&st);
     (void)snprintf(s_banner, sizeof s_banner, "\r\nXMSGGW %s, node %u\r\n", XMSGGW_VERSION,
                    (unsigned)settings_node());
@@ -778,7 +863,8 @@ int gw_console_init(void)
     cfg.services.help_user = FILE_CONSOLE_HELP;
     cfg.services.help_admin =
         "NODE <n>           show or store our node number, used after RESTART (admin)\r\n"
-        "RESTART            restart the gateway; every session ends (admin)\r\n";
+        "RESTART            restart the gateway; every session ends (admin)\r\n"
+        "FIRMWARE [SWITCH]  show both firmware slots; SWITCH restarts into HDLCGW (admin)\r\n";
     if (console_host_init(&s_host, &cfg, s_sessions, PLACES) != 0)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "console_host_init failed");

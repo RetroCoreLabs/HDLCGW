@@ -1,13 +1,13 @@
 /**************************************************************************
 ** TELNET_TASK - WiFi, and the telnet connections' bytes                 **
 **                                                                       **
-** Joins the stored WiFi network (settings_wifi) and listens on TCP port **
+** Joins the shared WiFi network (board_wifi) and listens on TCP port    **
 ** 23. For each connection it does the telnet part (libxmsg              **
 ** term/term_telnet.h: option talk, IAC doubling) and moves bytes: what  **
 ** the user typed into the connection's input queue, what the console    **
 ** wrote out of its output queue to the socket.                          **
 **                                                                       **
-** Everything else - the login, the XMSGGW> command line, the onward     **
+** Everything else - the login, the XMSG> command line, the onward       **
 ** terminal sessions - is libxmsg's console (console/console.h), run by  **
 ** the node task (gw_console.h), so that the console and the node are in **
 ** one task, as the console asks. The node task reaches a connection only **
@@ -40,7 +40,7 @@ typedef struct
     bool wifi_up;              /**< joined, with an IP address */
     uint32_t ip;               /**< IPv4, first octet in the low byte (as IPAddress) */
     int rssi;                  /**< signal, dBm; 0 when not joined */
-    int settings_source;       /**< settings_wifi(): 0 own, 1 HDLCGW's, -1 none */
+    int settings_source;       /**< board_wifi(): 0 a network is stored, -1 none */
     uint32_t wifi_connects;    /**< times the network was joined */
     uint32_t users;            /**< telnet connections accepted */
     uint32_t refused;          /**< telnet connections turned away (no connection free) */

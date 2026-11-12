@@ -27,6 +27,22 @@
 #include "console_out.h"
 #include "usb_rx.h"
 #include "usb_tx_task.h"
+#include "settings.h"
+#include "telnet_task.h"
+#include "../common/board.h"
+
+/** @brief board_ask_ops.print. */
+static void ask_print(const char *text)
+{
+    console_out_print(text);
+}
+
+/* Questions for a missing setting when the text console opens: the WiFi
+ * network and the node number (../common/board.h). */
+static const board_ask_ops ASK_OPS = {
+    ask_print, board_set_wifi_ssid, board_set_wifi_pass, telnet_task_reconnect,
+    settings_node, settings_set_node,
+};
 
 console_mode g_console_mode = CONSOLE_FORWARDING;
 
@@ -211,7 +227,12 @@ static void handle_forwarding_input(uint8_t c)
                 g_console_mode = CONSOLE_DEBUG;
                 console_out_println("\r\n*** XMSGGW text console. HELP lists the commands, "
                                     "EXIT returns to frames. ***");
-                console_task_show_prompt();
+                /* No login on USB: whoever opens the console is the admin.
+                 * Ask for what is missing (../common/board.h). */
+                if (!board_ask_start(&ASK_OPS))
+                {
+                    console_task_show_prompt();
+                }
             }
             return;
         }
@@ -249,6 +270,19 @@ static void handle_debug_input(char c)
     else if (c == '\n' || c == '\r')
     {
         console_out_println();
+        if (board_ask_active())
+        {
+            /* The line answers a question (board_ask_start); empty skips it. */
+            g_input[g_input_pos] = '\0';
+            board_ask_answer(g_input);
+            memset(g_input, 0, (size_t)g_input_pos);   /* may be a password */
+            g_input_pos = 0;
+            if (!board_ask_active() && g_console_mode == CONSOLE_DEBUG)
+            {
+                console_task_show_prompt();
+            }
+            return;
+        }
         if (g_input_pos > 0)
         {
             g_input[g_input_pos] = '\0';
@@ -262,7 +296,7 @@ static void handle_debug_input(char c)
     }
     else if (c >= 32 && c < 127 && g_input_pos < INPUT_MAX)
     {
-        char echo[2] = { c, '\0' };
+        char echo[2] = { board_ask_hidden() ? '*' : c, '\0' };
         g_input[g_input_pos++] = c;
         console_out_print(echo);
     }
@@ -400,7 +434,7 @@ static void handle_housekeeping(void)
 
 void console_task_show_prompt(void)
 {
-    console_out_print("# ");
+    console_out_print("XMSG# ");   /* USB console (Ronny, 2026-11-12; was "# "); telnet shows "XMSG> " */
 }
 
 void console_task_run(void *params)

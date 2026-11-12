@@ -74,8 +74,8 @@ Commands at the `XMSGGW> ` prompt:
 | `CONNECT <system>` | terminal session to a SINTRAN system by name or number, e.g. `CONNECT D100` |
 | `LIST` | the routing table of the host we are linked to |
 | `NAMES` | the system names and named ports the host knows |
-| `WHO` | the users on this gateway |
-| `INFO` | link state, line speed, frame and datagram counts, version and build time |
+| `WHO` | the users on this gateway: the telnet sessions, and a line marked `FTP` for a connected FTP user |
+| `INFO` | link state, line speed, frame and datagram counts, version and build time; who is on FTP (user, address, how long) and the FTP counts since start |
 | `PASSWORD` | change your own password |
 | `HELP` | the commands |
 | `EXIT`, `LOGOUT`, `QUIT` | close the connection |
@@ -109,6 +109,10 @@ with a gateway user, the same ones as telnet. The folders:
 A SINTRAN file `NAME:TYPE` is named `NAME.TYPE` in FTP. A download is read from SINTRAN
 through libcosmos' COSMOS file client and sent to the client as it arrives, through a 256 KB
 buffer in PSRAM; there is no size limit. A file SINTRAN refuses gives `550` with SINTRAN's error number.
+A file with no bytes in it (FILE-STATISTICS "1 PAGE , 0 BYTES", such as `RONNY-R:TXT` on D100)
+downloads as an empty file: SINTRAN leaves the length out of its answer when it opens one, which
+libxmsg reads as 0 bytes since c0b0c8b, as SINTRAN's own COPY-FILE does ("SOURCE EMPTY").
+Tested 2026-11-12.
 
 An upload (`STOR`) is taken whole into PSRAM (at most 1 MB) and then written to SINTRAN as a new
 file under the folder's SINTRAN user. A file that exists is replaced: the gateway first asks for a
@@ -123,8 +127,13 @@ parity on the way in, which is how SINTRAN keeps text (all 4780 bytes of STARTX3
 even parity). `TYPE I` (binary) moves the bytes unchanged both ways. Neither changes line ends:
 SINTRAN text already ends its lines with CR LF.
 
-A folder listing walks SINTRAN's directory one file at a time: 253 files took 60 s
-(2026-11-11). Each version of a file is its own entry, so a name can appear more than once. `ls`
+A folder listing walks SINTRAN's directory one file at a time: 253 files took 60-66 s
+(2026-11-11 and 2026-11-12), about 0.2 s a file. Each file is one request to SINTRAN and its answer;
+SINTRAN's own file client lists at the same rate (libxmsg decoded a capture of its LIST-FILES), so
+the time is SINTRAN's, not the gateway's or FTP's. The listing is sent as it arrives (the first
+line after about 2.4 s), but graphical FTP programs such as WinSCP draw a folder only when the whole
+listing is in, so they look stuck for that minute. Each version of a file is its own entry, so a
+name can appear more than once. `ls`
 (NLST) gives the names, `dir` (LIST) the long form, as on SINTRAN's own FTP server. The long form
 is `ls -l` lines, because graphical FTP programs read only that, with SINTRAN's facts in them:
 

@@ -40,8 +40,66 @@ extern console_mode g_console_mode;   /**< current port use */
  */
 void console_task_run(void *params);
 
-/** @brief Print the DEBUG prompt, "# ". */
+/** @brief Print the prompt of the USB setup questions' end ("XMSG# "). */
 void console_task_show_prompt(void);
+
+/* ------------------------------------------------ the USB text console
+ *
+ * One command list for USB and telnet (Ronny, 2026-11-12): once ESC ESC ESC
+ * has opened the text console and the setup questions (../common/board.h)
+ * are done, the typed bytes go to the console core in gw_console.cpp (node
+ * task) as one more console place, logged in as admin with no password. The
+ * calls below hand bytes and state between the two tasks.
+ */
+
+/** @brief The text console is open and wants a console place (gw_console.cpp
+ *         takes it once: the call clears the wish). */
+bool console_task_usb_take_open(void);
+
+/**
+ * @brief Typed bytes for the console place, in order.
+ * @param[out] buf  Where they go.
+ * @param[in]  cap  Size of buf.
+ * @return Bytes copied, 0 when none wait.
+ */
+int console_task_usb_read(uint8_t *buf, int cap);
+
+/** @brief The console place has closed (EXIT): the port goes back to frames. */
+void console_task_usb_closed(void);
+
+/** @brief The USB host went away while the text console was open (cleared by the call). */
+bool console_task_usb_take_lost(void);
+
+/* ------------------------------------------------ commands run for a place
+ *
+ * A command of the old USB table (commands.h, commands_shared_check) asked for
+ * at any console place runs HERE, in the console task, not in the node task:
+ * some take seconds (WIFI SCAN, about 3 s) and the node task keeps the XMSG
+ * link's timers. Its printed text is caught (console_out_capture_begin) and
+ * handed back. One command at a time.
+ */
+
+/**
+ * @brief Ask for a command to be run.
+ * @param[in] place  The console place, given back with the text.
+ * @param[in] line   The command line.
+ * @return true when taken, false when another one is still running.
+ */
+bool console_task_job_post(int place, const char *line);
+
+/**
+ * @brief A finished command's text.
+ * @param[out] place  Its place.
+ * @return The text (zero-terminated), or NULL when none is finished. Give it
+ *         back with console_task_job_release() once printed.
+ */
+const char *console_task_job_result(int *place);
+
+/** @brief The text from console_task_job_result() has been used. */
+void console_task_job_release(void);
+
+/** @brief The user at place stopped the command or left: its text is thrown away. */
+void console_task_job_cancel(int place);
 
 /**
  * @brief Bytes read from the USB serial port since boot, in every mode.

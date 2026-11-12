@@ -18,7 +18,10 @@
 #include <strings.h>
 
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <esp_timer.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/stream_buffer.h>
 
 #include "libhdlc/byte_frame.h"
 #include "libhdlc/control_frame.h"
@@ -56,6 +59,24 @@ static uint32_t g_last_stat_push_ms = 0;
 static byte_frame_decoder g_host_decoder;
 static uint32_t g_host_dropped = 0;
 static int g_esc_count = 0;     /* ESC presses in a row while idle, 3 = DEBUG */
+
+/* The USB text console as a console place (console_task.h). */
+#define USB_TYPED_MAX 512
+static StreamBufferHandle_t g_usb_typed = NULL;   /* typed bytes, console task -> node task */
+static volatile bool g_usb_open_wanted = false;   /* set here, taken by gw_console.cpp */
+static volatile bool g_usb_closed = false;        /* set by gw_console.cpp: EXIT */
+static volatile bool g_usb_lost = false;          /* set here, taken by gw_console.cpp */
+
+/* One command run for a console place (console_task.h). The state moves
+ * IDLE -> POSTED (node task) -> DONE (this task) -> IDLE (node task). */
+#define JOB_TEXT_MAX 4096
+typedef enum { JOB_IDLE = 0, JOB_POSTED, JOB_DONE } job_state;
+static volatile job_state g_job_state = JOB_IDLE;
+static volatile bool g_job_cancelled = false;
+static int g_job_place = -1;
+#define JOB_LINE_MAX 256
+static char g_job_line[JOB_LINE_MAX + 1];
+static char *g_job_text = NULL;                    /* JOB_TEXT_MAX, PSRAM */
 
 static volatile uint32_t g_usb_rx_bytes = 0;
 
@@ -231,7 +252,8 @@ static void handle_forwarding_input(uint8_t c)
                  * Ask for what is missing (../common/board.h). */
                 if (!board_ask_start(&ASK_OPS))
                 {
-                    console_task_show_prompt();
+                    /* Nothing to ask: straight to the shared console (gw_console.cpp). */
+                    g_usb_open_wanted = true;
                 }
             }
             return;
@@ -258,6 +280,16 @@ static void handle_forwarding_input(uint8_t c)
  */
 static void handle_debug_input(char c)
 {
+    if (!board_ask_active())
+    {
+        /* The shared console (gw_console.cpp) edits the line and runs it. A
+         * full buffer drops the key: the node task empties it every pass. */
+        if (g_usb_typed != NULL)
+        {
+            (void)xStreamBufferSend(g_usb_typed, &c, 1, 0);
+        }
+        return;
+    }
     if (c == '\b' || c == 0x7f)
     {
         if (g_input_pos > 0)
@@ -279,7 +311,7 @@ static void handle_debug_input(char c)
             g_input_pos = 0;
             if (!board_ask_active() && g_console_mode == CONSOLE_DEBUG)
             {
-                console_task_show_prompt();
+                g_usb_open_wanted = true;   /* questions done: the shared console */
             }
             return;
         }
@@ -419,6 +451,12 @@ static void handle_housekeeping(void)
     if (g_host_lost)
     {
         g_host_lost = false;
+        if (g_console_mode == CONSOLE_DEBUG)
+        {
+            g_console_mode = CONSOLE_FORWARDING;
+            g_usb_open_wanted = false;
+            g_usb_lost = true;   /* gw_console.cpp ends the console place */
+        }
         console_out_host_reset();
         ring_buffer_clear(&g_usb_tx_buffer);
         console_out_log(CONTROL_FRAME_LOG_INFO, "USB host lost, log and stat push off");
@@ -432,6 +470,122 @@ static void handle_housekeeping(void)
     }
 }
 
+/** @brief The console place said EXIT: back to control frames, as the old EXIT did. */
+static void handle_usb_closed(void)
+{
+    if (!g_usb_closed)
+    {
+        return;
+    }
+    g_usb_closed = false;
+    if (g_console_mode == CONSOLE_DEBUG)
+    {
+        g_console_mode = CONSOLE_FORWARDING;
+        byte_frame_decoder_reset(&g_host_decoder);
+        console_out_event(CONTROL_FRAME_EVENT_MODE_CHANGE, "FORWARDING");
+    }
+}
+
+/** @brief Run a posted command with its text caught (console_task.h). */
+static void run_job(void)
+{
+    if (g_job_state != JOB_POSTED)
+    {
+        return;
+    }
+    if (g_job_text == NULL)
+    {
+        g_job_state = JOB_IDLE;   /* no PSRAM: console_task_job_post() refuses then */
+        return;
+    }
+    console_out_capture_begin(g_job_text, JOB_TEXT_MAX);
+    commands_process(g_job_line);
+    (void)console_out_capture_end();
+    g_job_state = JOB_DONE;
+}
+
+bool console_task_usb_take_open(void)
+{
+    bool wanted = g_usb_open_wanted;
+    g_usb_open_wanted = false;
+    return wanted;
+}
+
+int console_task_usb_read(uint8_t *buf, int cap)
+{
+    if (g_usb_typed == NULL || buf == NULL || cap <= 0)
+    {
+        return 0;
+    }
+    return (int)xStreamBufferReceive(g_usb_typed, buf, (size_t)cap, 0);
+}
+
+void console_task_usb_closed(void)
+{
+    g_usb_closed = true;
+}
+
+bool console_task_usb_take_lost(void)
+{
+    bool lost = g_usb_lost;
+    g_usb_lost = false;
+    return lost;
+}
+
+bool console_task_job_post(int place, const char *line)
+{
+    size_t n;
+    if (g_job_state != JOB_IDLE || g_job_text == NULL || line == NULL)
+    {
+        return false;
+    }
+    n = strlen(line);
+    if (n > JOB_LINE_MAX)
+    {
+        n = JOB_LINE_MAX;
+    }
+    memcpy(g_job_line, line, n);
+    g_job_line[n] = '\0';
+    g_job_place = place;
+    g_job_cancelled = false;
+    g_job_state = JOB_POSTED;
+    return true;
+}
+
+const char *console_task_job_result(int *place)
+{
+    if (g_job_state != JOB_DONE)
+    {
+        return NULL;
+    }
+    if (g_job_cancelled)
+    {
+        g_job_state = JOB_IDLE;   /* nobody wants the text any more */
+        return NULL;
+    }
+    if (place != NULL)
+    {
+        *place = g_job_place;
+    }
+    return g_job_text;
+}
+
+void console_task_job_release(void)
+{
+    if (g_job_state == JOB_DONE)
+    {
+        g_job_state = JOB_IDLE;
+    }
+}
+
+void console_task_job_cancel(int place)
+{
+    if (g_job_state != JOB_IDLE && g_job_place == place)
+    {
+        g_job_cancelled = true;
+    }
+}
+
 void console_task_show_prompt(void)
 {
     console_out_print("XMSG# ");   /* USB console (Ronny, 2026-11-12; was "# "); telnet shows "XMSG> " */
@@ -442,6 +596,8 @@ void console_task_run(void *params)
     (void)params;
 
     byte_frame_decoder_reset(&g_host_decoder);
+    g_usb_typed = xStreamBufferCreate(USB_TYPED_MAX, 1);
+    g_job_text = (char *)heap_caps_calloc(1, JOB_TEXT_MAX, MALLOC_CAP_SPIRAM);
 
     /* "Disconnected" is posted when DTR drops and on cable removal. */
     Serial.onEvent(ARDUINO_USB_CDC_DISCONNECTED_EVENT, on_usb_disconnected);
@@ -466,6 +622,8 @@ void console_task_run(void *params)
         last_read_end = t1;
         g_host_input_us = g_host_input_us + (uint32_t)(t1 - t0);
         handle_housekeeping();
+        handle_usb_closed();
+        run_job();
         usb_rx_poll();
         vTaskDelay(pdMS_TO_TICKS(1));
     }

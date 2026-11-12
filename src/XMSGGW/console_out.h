@@ -32,6 +32,7 @@
 #ifndef CONSOLE_OUT_H
 #define CONSOLE_OUT_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -59,6 +60,31 @@ void console_out_init(void);
  * @param[in] s  NUL-terminated text.
  */
 void console_out_print(const char *s);
+
+/**
+ * @brief Bytes for the USB text console, as they are (the console core's
+ *        line for the USB place, gw_console.cpp). Dropped outside the text
+ *        console, like every loose text.
+ * @param[in] s  Bytes.
+ * @param[in] n  How many.
+ */
+void console_out_text(const char *s, int n);
+
+/**
+ * @brief From now on, text printed BY THE CALLING TASK goes into buf instead
+ *        of the port, until console_out_capture_end(). Text from other tasks
+ *        (log lines, events) is not caught. Used to run a USB console command
+ *        for a telnet user (console_task.h, the shared command list).
+ * @param[out] buf  Where the text goes; always zero-terminated.
+ * @param[in]  cap  Size of buf; text past it is dropped.
+ */
+void console_out_capture_begin(char *buf, size_t cap);
+
+/**
+ * @brief Stop catching text.
+ * @return Bytes caught (without the terminating zero).
+ */
+size_t console_out_capture_end(void);
 
 /**
  * @brief Print text followed by CR LF. With no argument prints a blank line.

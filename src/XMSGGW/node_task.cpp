@@ -66,7 +66,10 @@ static uint32_t s_tx_full = 0;
 static uint8_t s_last_frame[LINE_FRAME_MAX];
 static int s_last_len = 0;
 static bool s_last_good = false;
-static uint8_t s_bad_frames[BAD_HISTORY][LINE_FRAME_MAX];
+/* In PSRAM (2.5 KB): internal RAM is full since the USB console became a
+ * console place (2026-11-12). Allocated in node_task_run() before the line
+ * starts; NULL means the bad frames are counted but not kept. */
+static uint8_t (*s_bad_frames)[LINE_FRAME_MAX] = NULL;
 static int s_bad_lens[BAD_HISTORY];
 static int s_bad_next = 0;
 
@@ -130,7 +133,7 @@ static void on_frame(void *ctx, int length, hdlc_rx_status status)
     memcpy(s_last_frame, s_rx_frame, (size_t)keep);
     s_last_len = keep;
     s_last_good = (status == HDLC_RX_OK);
-    if (status == HDLC_RX_BAD_CRC)
+    if (status == HDLC_RX_BAD_CRC && s_bad_frames != NULL)
     {
         memcpy(s_bad_frames[s_bad_next], s_rx_frame, (size_t)keep);
         s_bad_lens[s_bad_next] = keep;
@@ -308,10 +311,10 @@ const uint8_t *node_task_last_frame(int *len, bool *crc_good)
 const uint8_t *node_task_last_bad_frame(int index, int *len)
 {
     int slot;
-    if (index < 0 || index >= BAD_HISTORY)
+    if (index < 0 || index >= BAD_HISTORY || s_bad_frames == NULL)
     {
         *len = 0;
-        return s_bad_frames[0];
+        return s_last_frame;   /* any valid pointer: the length says there is nothing */
     }
     slot = (s_bad_next - 1 - index + 2 * BAD_HISTORY) % BAD_HISTORY;
     *len = s_bad_lens[slot];
@@ -351,6 +354,9 @@ void node_task_run(void *params)
 {
     uint8_t block[256];
     (void)params;
+
+    s_bad_frames = (uint8_t (*)[LINE_FRAME_MAX])heap_caps_calloc(BAD_HISTORY, LINE_FRAME_MAX,
+                                                                 MALLOC_CAP_SPIRAM);
 
     /* Here, not in node_task_init(): the first start writes the default
      * admin, one PBKDF2 run (about 0.5 s), too long for setup(). */

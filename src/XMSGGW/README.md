@@ -147,6 +147,47 @@ SINTRAN's table, as its own server prints it (the file number is 3 wide, `100` a
 `SIZE` and `MDTM` ask SINTRAN for that one file. `NLST CHAT*` lists the files whose name matches
 the pattern; the gateway matches that one itself.
 
+### Every FTP command
+
+All of them, as `ftp_server.cpp` handles them. Commands are not case sensitive. Only `USER`,
+`PASS`, `QUIT`, `NOOP`, `HELP`, `FEAT`, `OPTS` and `SYST` work before login; the rest answer
+`530 Log in first.`
+
+| Command | What the gateway does |
+|---|---|
+| `USER name` | starts a login with a gateway user (the same users as telnet); `331` |
+| `PASS password` | ends the login; `230`. A wrong name or password gets `530`, and the third wrong try ends the session. A user whose password must be changed gets `530` and has to log in over telnet once. After login TYPE is A, and CONV and SITE TABLE are off |
+| `QUIT` | `221`, and the session ends |
+| `NOOP` | `200 OK.` |
+| `HELP` | `214`: the command list and a short note on folders, names, TYPE, CONV, SITE TABLE and STOR |
+| `FEAT` | `211`: EPSV, MDTM, PASV, SIZE, UTF8 |
+| `OPTS ...` | `200 OK.` (for `OPTS UTF8 ON`; names are plain ASCII either way) |
+| `SYST` | `215 UNIX Type: L8`, so clients expect `ls -l` lines |
+| `PWD`, `XPWD` | `257` and the current folder, such as `"/D100/SYSTEM"` |
+| `CWD folder`, `XCWD` | moves to a folder (`/`, `/D100`, `/D100/SYSTEM`; `..` and relative names work); `250`, or `550` with the reason |
+| `CDUP`, `XCUP` | one folder up |
+| `TYPE A` (or `A N`) | ASCII, the start value: bit 7 is cleared on download and set to even parity on upload |
+| `TYPE I` (or `L 8`) | binary: bytes unchanged both ways. Any other type gets `504` |
+| `MODE`, `STRU` | `200 OK.` and nothing changes (stream mode, file structure only) |
+| `PASV` | passive mode on data port 2121; `227` |
+| `EPSV` | the same; `229` |
+| `PORT`, `EPRT` | active mode: the gateway connects back, but only to the client's own address |
+| `LIST [NAME]` | `dir`: the long form, `ls -l` lines (or SINTRAN's table after `SITE TABLE`). In a user folder, `NAME` is passed to SINTRAN as a name filter, as SINTRAN's own server does |
+| `NLST [NAME]` | `ls`: names only. `NAME` filters as for LIST; a pattern with `*` (`CHAT*`) is matched by the gateway |
+| `RETR NAME.TYPE` | downloads a file from the folder's SINTRAN user, streamed as it arrives, no size limit |
+| `STOR NAME.TYPE` | uploads a file (at most 1 MB, not empty). A file that exists is replaced. `226`, or `550` with SINTRAN's error |
+| `SIZE NAME.TYPE` | `213` and the byte count, asked from SINTRAN |
+| `MDTM NAME.TYPE` | `213 YYYYMMDDhhmmss`: the last write, else the creation, in SINTRAN's own time |
+| `CONV`, `SITE CONV` | switches names between `NAME.TYPE` and SINTRAN's `NAME:TYPE;1`; `200` |
+| `SITE TABLE` | switches LIST between `ls -l` lines and SINTRAN's own table; `200`. Any other SITE gets `504` |
+| `DELE`, `RNFR`, `RNTO`, `APPE` | `550`: deleting, renaming and appending are not built yet |
+| `MKD`, `XMKD`, `RMD`, `XRMD` | `550`: the folders are the machines and their SINTRAN users and cannot be made or removed |
+| anything else | `502 Command not implemented.` |
+
+A file name may also be written `NAME:TYPE`. Limits: one FTP user at a time (a second gets
+`421`); a session with no command and no transfer for 5 minutes is closed with `421`; a data
+connection that has not opened after 10 seconds is given up with `425`.
+
 An admin sets each gateway user's SINTRAN account on the `XMSGGW>` command line:
 
 | Command | What it does |

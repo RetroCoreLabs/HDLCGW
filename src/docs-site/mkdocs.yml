@@ -1,0 +1,100 @@
+# The HDLCGW documentation site: https://retrocorelabs.github.io/HDLCGW/
+#
+# Why MkDocs: HDLCGW is C/C++ firmware (two Arduino sketches), plus hardware notes; the
+# reference pages come from the header comments through a project script
+# (src/tools/gen_docs.py), and DocFX reads only C#. MkDocs Material gives the page tree, search
+# and dark mode, and renders the same Markdown github.com shows. The same setup as libxmsg's site.
+#
+# This file holds the settings. The pages and the menu are written into build-site/ by the
+# generator, whose mkdocs.yml inherits this one. Build it the way CI does:
+#   pip install -r src/docs-site/requirements.txt
+#   python3 src/tools/gen_docs.py build-site
+#   mkdocs build --strict -f build-site/mkdocs.yml -d <a folder outside the checkout>
+site_name: HDLCGW
+site_description: ESP32-S2 boards that put a Norsk Data HDLC line on USB, WiFi and the XMSG network
+site_url: https://retrocorelabs.github.io/HDLCGW/
+repo_url: https://github.com/RetroCoreLabs/HDLCGW
+repo_name: RetroCoreLabs/HDLCGW
+# The pages are generated, so "edit this page" would point at files that do not exist.
+edit_uri: ""
+
+theme:
+  name: material
+  logo: assets/hdlcgw.svg
+  favicon: assets/hdlcgw.svg
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue grey
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - navigation.indexes
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - navigation.prune
+    - search.suggest
+    - search.highlight
+    - toc.follow
+    - content.code.copy
+
+plugins:
+  - search
+
+extra_css:
+  - assets/extra.css
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.min.js
+  - assets/mermaid-init.js
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/RetroCoreLabs/HDLCGW
+      name: HDLCGW on GitHub
+
+markdown_extensions:
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - tables
+  - attr_list
+  - md_in_html
+  - admonition
+  - footnotes
+  - def_list
+  - pymdownx.details
+  # Mermaid blocks get the class mermaid-gh, which Material leaves alone, and
+  # assets/mermaid-init.js draws them as github.com does (see the reason in that file).
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid-gh
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight
+  - pymdownx.tabbed:
+      alternate_style: true
+  - mdx_truly_sane_lists:
+      nested_indent: 2
+
+validation:
+  links:
+    not_found: warn
+    anchors: warn

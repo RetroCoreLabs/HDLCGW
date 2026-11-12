@@ -1,0 +1,46 @@
+/* Material hides the header logo below 1220 px wide (it moves into the side drawer). Keep the
+   icon in the header at every width, so a narrow window still shows whose site this is. */
+@media screen and (max-width: 76.2344em) {
+  .md-header__button.md-logo {
+    display: inline-block;
+  }
+}
+
+/* A C name or a hex word in a table cell must not break in the middle. Material scrolls a
+   table that gets too wide, so keeping them on one line is safe. */
+.md-typeset table:not([class]) code {
+  white-space: nowrap;
+}
+
+/* Contrast, measured with repo-standards tools/check-contrast.js: Material's defaults put inline
+   code (4.2:1), numbers in code (4.4:1) and the fold-out title (2.2:1) under WCAG AA (4.5:1) in
+   the dark scheme, and code punctuation right on the limit in the light one. */
+[data-md-color-scheme="slate"] {
+  --md-code-fg-color: #b4c7f0;
+  --md-code-hl-number-color: #f29a8f;
+  --md-code-hl-function-color: #b9aef0;
+  --md-code-hl-constant-color: #b9aef0;
+}
+[data-md-color-scheme="slate"] .md-typeset a code {
+  color: #9dbcf2;
+}
+[data-md-color-scheme="slate"] .md-typeset details > summary {
+  color: #e2e4e9;
+  background-color: #2a3240;
+}
+[data-md-color-scheme="slate"] .md-typeset details {
+  background-color: #2a3240;
+}
+[data-md-color-scheme="default"] {
+  --md-code-hl-punctuation-color: rgba(0, 0, 0, 0.7);
+  --md-code-hl-operator-color: rgba(0, 0, 0, 0.7);
+  --md-code-hl-comment-color: rgba(0, 0, 0, 0.7);
+  --md-footer-fg-color--lighter: rgba(255, 255, 255, 0.7);
+}
+
+/* A drawn diagram: centred, never wider than the column. */
+.md-typeset .mermaid-gh-drawn {
+  margin: 1em 0;
+  text-align: center;
+  overflow-x: auto;
+}

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- HDLCGW: the RetroX25 icon's shape (frame, bracket, signal) with HDLC, the line the
+       gateway speaks, and GW for gateway. The letters are drawn as strokes, not text, so every
+       browser shows the same thing. -->
+  <rect width="1024" height="1024" fill="#00142a"/>
+  <rect x="122" y="92" width="780" height="768" rx="70" fill="none" stroke="#f0921e" stroke-width="36"/>
+  <g fill="none" stroke="#f0921e" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <!-- the bracket -->
+    <path d="M320 205 V215 Q320 270 255 272 H238 V670 H255 Q320 672 320 760"/>
+  </g>
+  <g fill="none" stroke="#f0921e" stroke-width="30" stroke-linecap="butt" stroke-linejoin="round">
+    <!-- H -->
+    <path d="M405 200 V335 M478 200 V335 M405 267 H478"/>
+    <!-- D -->
+    <path d="M512 200 V335 H542 Q594 335 594 267 Q594 200 542 200 Z"/>
+    <!-- L -->
+    <path d="M628 200 V335 H690"/>
+    <!-- C -->
+    <path d="M790 218 Q772 200 746 200 Q706 200 706 267 Q706 335 746 335 Q772 335 790 317"/>
+    <!-- G -->
+    <path d="M664 643 Q648 625 622 625 Q582 625 582 692 Q582 760 622 760 Q664 760 664 718 V700 H626"/>
+    <!-- W -->
+    <path d="M692 625 L716 760 L746 676 L776 760 L800 625"/>
+  </g>
+  <!-- the signal -->
+  <path d="M258 492 H390 Q410 492 420 455 Q440 380 462 455 L510 565 Q530 610 552 560 L568 515 Q578 492 600 492 H786"
+        fill="none" stroke="#1565c0" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

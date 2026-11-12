@@ -7,3 +7,4 @@ Backup-*.zip
 # KiCad per-user view settings
 *.kicad_prl
 build-site/
+__pycache__/

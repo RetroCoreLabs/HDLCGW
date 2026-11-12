@@ -67,7 +67,7 @@ static const command COMMANDS[] =
     { "REACH",   "Ask the peer 'are you there?'; STAT shows asked / answered", handle_reach },
     { "TERM",    "TERM CONNECT <system>|TYPE <text>|SHOW|STATUS|HANGUP - terminal session",
       handle_term },
-    { "WIFI",    "WIFI [STATUS]|SSID <name>|PASS <password>|CONNECT - network for telnet",
+    { "WIFI",    "WIFI [STATUS]|SCAN|SHOW|SSID <name>|PASS <password>|CONNECT - network",
       handle_wifi },
     { "TTYP",    "TTYP [n] - Terminal type for new sessions (0 default; 93 = TDV 2200)", handle_ttyp },
     { "PARITY",  "PARITY [ON|OFF] - Even parity on typed bytes for new sessions (ON default)", handle_parity },
@@ -662,7 +662,7 @@ static void handle_term(const char *args)
 }
 
 /**
- * @brief WIFI command. The password is stored but never printed.
+ * @brief WIFI command. Only WIFI SHOW prints the password (USB console only).
  * @param[in] args  STATUS (or nothing), SSID <name>, PASS <password> or
  *                  CONNECT (read the settings again and join).
  */
@@ -723,13 +723,26 @@ static void handle_wifi(const char *args)
         console_out_println("Password stored (not shown); WIFI CONNECT to use it.");
         return;
     }
+    if (strcasecmp(args, "SCAN") == 0)
+    {
+        board_wifi_scan(console_out_print);
+        return;
+    }
+    if (strcasecmp(args, "SHOW") == 0)
+    {
+        /* Ronny, 2026-11-12: the password may be shown on the USB console.
+         * This command table only runs from the USB console; the telnet
+         * console (gw_console.cpp) has no WIFI command. */
+        board_wifi_show(console_out_print);
+        return;
+    }
     if (strcasecmp(args, "CONNECT") == 0)
     {
         telnet_task_reconnect();
         console_out_println("Joining the network again; WIFI STATUS shows when it is up.");
         return;
     }
-    console_out_println("Usage: WIFI [STATUS]|SSID <name>|PASS <password>|CONNECT");
+    console_out_println("Usage: WIFI [STATUS]|SCAN|SHOW|SSID <name>|PASS <password>|CONNECT");
 }
 
 /**

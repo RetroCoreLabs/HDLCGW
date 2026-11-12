@@ -850,3 +850,58 @@ void board_ask_answer(const char *line)
         return;
     }
 }
+
+void board_wifi_scan(void (*print)(const char *text))
+{
+    char text[96];
+    int16_t n;
+
+    if (print == NULL)
+    {
+        return;
+    }
+    if (WiFi.getMode() == WIFI_OFF)
+    {
+        (void)WiFi.mode(WIFI_STA);   /* a scan needs the radio on as a station */
+    }
+    print("Scanning (about 3 s)...\r\n");
+    n = WiFi.scanNetworks(false, true);
+    if (n <= 0)
+    {
+        (void)snprintf(text, sizeof text, "No networks found (%d).\r\n", (int)n);
+        print(text);
+        WiFi.scanDelete();
+        return;
+    }
+    for (int16_t i = 0; i < n; i++)
+    {
+        (void)snprintf(text, sizeof text, "  %-32s ch %2d  %4d dBm  %s\r\n",
+                       WiFi.SSID((uint8_t)i).c_str(), (int)WiFi.channel((uint8_t)i),
+                       (int)WiFi.RSSI((uint8_t)i),
+                       (WiFi.encryptionType((uint8_t)i) == WIFI_AUTH_OPEN) ? "open" : "secured");
+        print(text);
+    }
+    WiFi.scanDelete();
+}
+
+void board_wifi_show(void (*print)(const char *text))
+{
+    char ssid[BOARD_SSID_SIZE];
+    char pass[BOARD_PASS_SIZE];
+    char text[BOARD_SSID_SIZE + BOARD_PASS_SIZE + 48];
+
+    if (print == NULL)
+    {
+        return;
+    }
+    if (board_wifi(ssid, pass) < 0)
+    {
+        print("No WiFi network stored.\r\n");
+        return;
+    }
+    (void)snprintf(text, sizeof text, "Network: %s\r\nPassword: %s\r\n", ssid,
+                   (pass[0] != '\0') ? pass : "(none: open network)");
+    print(text);
+    memset(pass, 0, sizeof pass);
+    memset(text, 0, sizeof text);
+}

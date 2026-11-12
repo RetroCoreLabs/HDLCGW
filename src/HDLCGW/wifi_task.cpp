@@ -1076,24 +1076,20 @@ void wifi_task_peer_debug(void)
     }
 }
 
+/** @brief Prints scan text on the console (board_wifi_scan's print hook). */
+static void scan_print(const char *text)
+{
+    console_out_printf("%s", text);
+}
+
 void wifi_task_scan(void)
 {
-    int16_t n;
+    board_wifi_scan(scan_print);   /* shared with XMSGGW's WIFI SCAN */
+}
 
-    console_out_println("Scanning (about 3 s)...");
-    n = WiFi.scanNetworks(false, true);
-    if (n <= 0)
-    {
-        console_out_printf("No networks found (%d).\r\n", (int)n);
-        return;
-    }
-    for (int16_t i = 0; i < n; i++)
-    {
-        console_out_printf("  %-32s ch %2d  %4d dBm  %s\r\n", WiFi.SSID((uint8_t)i).c_str(),
-                           (int)WiFi.channel((uint8_t)i), (int)WiFi.RSSI((uint8_t)i),
-                           WiFi.encryptionType((uint8_t)i) == WIFI_AUTH_OPEN ? "open" : "secured");
-    }
-    WiFi.scanDelete();
+void wifi_task_show(void)
+{
+    board_wifi_show(scan_print);   /* USB console only: commands never run from TCP */
 }
 
 void wifi_task_run(void *params)

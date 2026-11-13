@@ -63,7 +63,11 @@ void file_console_cancel(int place);
 /** @brief Work for the node task: start an asked command, feed its output to the console. */
 void file_console_pass(XmsgNode *node, ConsoleHost *host, uint32_t now);
 
-/** @brief HELP lines for the three commands (CR LF ended). */
-extern const char FILE_CONSOLE_HELP[];
+/** How many commands FILE_CONSOLE_COMMANDS holds. */
+#define FILE_CONSOLE_COMMAND_COUNT 3
+
+/** @brief LIST-FILES, FILE-STAT and COPY-TERM for HELP, HELP <command> and TAB
+ *         (ConsoleServices.commands). */
+extern const ConsoleCommandInfo FILE_CONSOLE_COMMANDS[FILE_CONSOLE_COMMAND_COUNT];
 
 #endif /* FILE_CONSOLE_H */

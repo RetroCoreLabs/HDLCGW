@@ -48,25 +48,34 @@ typedef enum
 /** One piece of console text. */
 #define PEND_MAX 640u
 
-const char FILE_CONSOLE_HELP[] =
-    "LIST-FILES         list files on a SINTRAN machine\r\n"
-    "FILE-STAT          size, dates and use count of files\r\n"
-    "COPY-TERM          show a file here (bit 7 cleared)\r\n"
-    "  Write the file as SINTRAN does:  machine(user(password)).NAME:TYPE\r\n"
-    "  Leave out (password): the stored one is used for your SINTRAN user.\r\n"
-    "  Leave out (user):     your SINTRAN account is used (admin: SINTRAN).\r\n"
-    "  :TYPE alone selects every file of that type.\r\n"
-    "  Examples:\r\n"
-    "    LIST-FILES D100(SYSTEM)              every file of SYSTEM on D100\r\n"
-    "    LIST-FILES D100(SYSTEM).:MODE        every MODE file\r\n"
-    "    LIST-FILES D102(RONNY(secret))       with a password\r\n"
-    "    LIST-FILES D100                      your own SINTRAN user's files\r\n"
-    "    LIST-FILES D100 SYSTEM :SYMB         the same with spaces\r\n"
-    "    FILE-STAT D100(SYSTEM).CHATKT:MODE   one file\r\n"
-    "    FILE-STAT D100(SYSTEM).:MODE         every MODE file\r\n"
-    "    FILE-STAT D100(SYSTEM)               every file\r\n"
-    "    COPY-TERM D100(SYSTEM).LOAD-MODE:MODE\r\n"
-    "  The escape key stops a command that is running.\r\n";
+/* How a file is written, shared by the three commands' HELP <command> text. */
+#define FILE_NAME_RULES \
+    "  Write the file as SINTRAN does:  machine(user(password)).NAME:TYPE\r\n" \
+    "  Leave out (password): the stored one is used for your SINTRAN user.\r\n" \
+    "  Leave out (user):     your SINTRAN account is used (admin: SINTRAN).\r\n" \
+    "  :TYPE alone selects every file of that type.\r\n" \
+    "  The escape key stops a command that is running.\r\n"
+
+const ConsoleCommandInfo FILE_CONSOLE_COMMANDS[FILE_CONSOLE_COMMAND_COUNT] = {
+    { "LIST-FILES", AUTH_LEVEL_USER, "list files on a SINTRAN machine",
+      "LIST-FILES machine(user(password)).NAME:TYPE\r\n" FILE_NAME_RULES
+      "  Examples:\r\n"
+      "    LIST-FILES D100(SYSTEM)              every file of SYSTEM on D100\r\n"
+      "    LIST-FILES D100(SYSTEM).:MODE        every MODE file\r\n"
+      "    LIST-FILES D102(RONNY(secret))       with a password\r\n"
+      "    LIST-FILES D100                      your own SINTRAN user's files\r\n"
+      "    LIST-FILES D100 SYSTEM :SYMB         the same with spaces\r\n" },
+    { "FILE-STAT", AUTH_LEVEL_USER, "size, dates and use count of files",
+      "FILE-STAT machine(user(password)).NAME:TYPE\r\n" FILE_NAME_RULES
+      "  Examples:\r\n"
+      "    FILE-STAT D100(SYSTEM).CHATKT:MODE   one file\r\n"
+      "    FILE-STAT D100(SYSTEM).:MODE         every MODE file\r\n"
+      "    FILE-STAT D100(SYSTEM)               every file\r\n" },
+    { "COPY-TERM", AUTH_LEVEL_USER, "show a file here (bit 7 cleared)",
+      "COPY-TERM machine(user(password)).NAME:TYPE\r\n" FILE_NAME_RULES
+      "  Example:\r\n"
+      "    COPY-TERM D100(SYSTEM).LOAD-MODE:MODE\r\n" },
+};
 
 static file_console_resolve s_resolve = NULL;
 static uint16_t s_own = 0;

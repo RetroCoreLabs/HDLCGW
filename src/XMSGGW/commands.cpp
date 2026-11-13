@@ -978,36 +978,39 @@ int commands_shared_check(const char *line, bool admin, bool usb, char *why, siz
     return 1;
 }
 
-void commands_shared_help(char *out, size_t cap, bool admin)
+int commands_shared_info(ConsoleCommandInfo *rows, int max, char *text, size_t text_cap)
 {
-    size_t len = 0;
+    int count = 0;
+    size_t used = 0;
 
-    if (out == NULL || cap == 0u)
+    if (rows == NULL || text == NULL)
     {
-        return;
+        return 0;
     }
-    out[0] = '\0';
-    for (int i = 0; i < NUM_COMMANDS; i++)
+    for (int i = 0; i < NUM_COMMANDS && count < max; i++)
     {
         const command *c = &COMMANDS[i];
+        const char *dash;
         int n;
         if (in_list(c->name, NOT_SHARED, sizeof NOT_SHARED / sizeof NOT_SHARED[0]))
         {
             continue;
         }
-        /* The core shows the user lines to everybody and the admin lines to the
-         * admin after them, so each command is in one of the two texts. */
-        if (admin == in_list(c->name, FOR_USERS, sizeof FOR_USERS / sizeof FOR_USERS[0]))
+        n = snprintf(&text[used], text_cap - used, "%s\r\n", c->help);
+        if (n < 0 || (size_t)n >= text_cap - used)
         {
-            continue;
+            break;   /* no room: the rest are left out of HELP, still runnable */
         }
-        n = snprintf(&out[len], cap - len, "%-18s %s\r\n", c->name, c->help);
-        if (n < 0 || (size_t)n >= cap - len)
-        {
-            break;   /* the list is cut here rather than half a line */
-        }
-        len = len + (size_t)n;
+        rows[count].name = c->name;
+        rows[count].level = in_list(c->name, FOR_USERS, sizeof FOR_USERS / sizeof FOR_USERS[0])
+                                ? AUTH_LEVEL_USER : AUTH_LEVEL_ADMIN;
+        dash = strstr(c->help, " - ");
+        rows[count].summary = (dash != NULL) ? dash + 3 : c->help;
+        rows[count].detail = &text[used];
+        used = used + (size_t)n + 1u;   /* keep the zero */
+        count++;
     }
+    return count;
 }
 
 void commands_process(char *line)

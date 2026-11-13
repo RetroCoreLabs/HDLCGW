@@ -90,11 +90,27 @@ static uint32_t s_now = 0;
 static ConsoleSession *s_usb = NULL;
 static size_t s_job_off = 0;      /* bytes of the finished command's text already printed */
 
-/* HELP text: the core's own lines come first, then these (built at init from
- * commands.cpp's table, so a new command shows up by itself). PSRAM. */
-#define HELP_TEXT_MAX 3072
-static char *s_help_user = NULL;
-static char *s_help_admin = NULL;
+/* The application's commands for HELP, HELP <command> and TAB (libxmsg
+ * ConsoleCommandInfo): the file commands, this file's own, and commands.cpp's
+ * shared ones (built at init, so a new command shows up by itself). PSRAM. */
+#define CMD_ROWS_MAX 40
+#define CMD_TEXT_MAX 3072
+static ConsoleCommandInfo *s_cmds = NULL;
+static char *s_cmd_text = NULL;
+
+/** This file's own commands. */
+static const ConsoleCommandInfo GW_COMMANDS[] = {
+    { "NODE", AUTH_LEVEL_ADMIN, "show or store our node number",
+      "NODE [<n>]  show, or store our node number (1..65535); RESTART uses it\r\n" },
+    { "RESTART", AUTH_LEVEL_ADMIN, "restart the gateway; every session ends", NULL },
+    { "FIRMWARE", AUTH_LEVEL_USER, "both firmware slots; SWITCH runs HDLCGW",
+      "FIRMWARE           what each slot holds and which one runs\r\n"
+      "FIRMWARE SWITCH    restart into HDLCGW (admin); a restart within 10 s comes back\r\n" },
+    { "SINTRAN", AUTH_LEVEL_ADMIN, "the SINTRAN account of each gateway user",
+      "SINTRAN                                             list (passwords are never shown)\r\n"
+      "SINTRAN <gateway-user> <sintran-user> [<password>]  set\r\n"
+      "SINTRAN <gateway-user> -                            remove\r\n" },
+};
 
 /* ------------------------------------------------------------- users */
 
@@ -685,6 +701,7 @@ static void usb_pass(uint32_t now)
         line.write = usb_write;
         line.close = usb_close;
         line.describe = usb_describe;
+        line.prompt = "XMSG# ";   /* Ronny, 2026-11-12: USB "XMSG#", telnet "XMSG>" */
         s_usb = console_host_open(&s_host, &line, now);
         if (s_usb == NULL)
         {
@@ -998,30 +1015,28 @@ int gw_console_init(void)
     cfg.services.who_more = svc_who_more;
     cfg.services.command = svc_command;
     cfg.services.command_cancel = svc_command_cancel;
-    s_help_user = (char *)heap_caps_calloc(1, HELP_TEXT_MAX, MALLOC_CAP_SPIRAM);
-    s_help_admin = (char *)heap_caps_calloc(1, HELP_TEXT_MAX, MALLOC_CAP_SPIRAM);
-    if (s_help_user == NULL || s_help_admin == NULL)
+    s_cmds = (ConsoleCommandInfo *)heap_caps_calloc(CMD_ROWS_MAX, sizeof(ConsoleCommandInfo),
+                                                    MALLOC_CAP_SPIRAM);
+    s_cmd_text = (char *)heap_caps_calloc(1, CMD_TEXT_MAX, MALLOC_CAP_SPIRAM);
+    if (s_cmds == NULL || s_cmd_text == NULL)
     {
-        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the HELP text");
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the HELP table");
         return -1;
     }
     {
-        size_t n = (size_t)snprintf(s_help_user, HELP_TEXT_MAX, "%s", FILE_CONSOLE_HELP);
-        if (n < HELP_TEXT_MAX)
+        int n = 0;
+        for (int i = 0; i < FILE_CONSOLE_COMMAND_COUNT; i++)
         {
-            commands_shared_help(s_help_user + n, HELP_TEXT_MAX - n, false);
+            s_cmds[n++] = FILE_CONSOLE_COMMANDS[i];
         }
-        n = (size_t)snprintf(s_help_admin, HELP_TEXT_MAX, "%s",
-            "NODE <n>           show or store our node number, used after RESTART (admin)\r\n"
-            "RESTART            restart the gateway; every session ends (admin)\r\n"
-            "FIRMWARE [SWITCH]  show both firmware slots; SWITCH restarts into HDLCGW (admin)\r\n");
-        if (n < HELP_TEXT_MAX)
+        for (size_t i = 0; i < sizeof GW_COMMANDS / sizeof GW_COMMANDS[0]; i++)
         {
-            commands_shared_help(s_help_admin + n, HELP_TEXT_MAX - n, true);
+            s_cmds[n++] = GW_COMMANDS[i];
         }
+        n += commands_shared_info(&s_cmds[n], CMD_ROWS_MAX - n, s_cmd_text, CMD_TEXT_MAX);
+        cfg.services.commands = s_cmds;
+        cfg.services.command_count = (size_t)n;
     }
-    cfg.services.help_user = s_help_user;
-    cfg.services.help_admin = s_help_admin;
     if (console_host_init(&s_host, &cfg, s_sessions, PLACES) != 0)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "console_host_init failed");

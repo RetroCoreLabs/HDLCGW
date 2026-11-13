@@ -12,6 +12,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include <libxmsg.h>
+#include <libxmsg/console/console.h>
+
 /**
  * @brief Handler for one command.
  * @param[in] args  Rest of the line after the command name, or NULL.
@@ -57,12 +60,17 @@ void commands_process(char *line);
 int commands_shared_check(const char *line, bool admin, bool usb, char *why, size_t cap);
 
 /**
- * @brief HELP lines for commands_shared_check()'s commands, CR LF ended.
- * @param[out] out    Text.
- * @param[in]  cap    Size of out.
- * @param[in]  admin  true: the admin-only commands; false: the ones an ordinary
- *                    user may run too (the core shows the admin both texts).
+ * @brief The shared commands as rows for the console core's HELP, HELP
+ *        <command> and TAB (libxmsg ConsoleCommandInfo). Each command's help
+ *        text "USAGE - what it does" becomes the summary (the part after
+ *        " - ") and the detail (the whole text). The detail lines are kept in
+ *        text (PSRAM, owned by the caller); the rows point into it.
+ * @param[out] rows      Where the rows go.
+ * @param[in]  max       Room in rows.
+ * @param[out] text      Storage for the detail lines.
+ * @param[in]  text_cap  Size of text.
+ * @return Rows written.
  */
-void commands_shared_help(char *out, size_t cap, bool admin);
+int commands_shared_info(ConsoleCommandInfo *rows, int max, char *text, size_t text_cap);
 
 #endif /* COMMANDS_H */

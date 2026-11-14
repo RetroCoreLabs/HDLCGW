@@ -74,9 +74,82 @@ typedef struct
     char new_ssid[BOARD_SSID_SIZE];   /* typed name, kept until the password is in */
     int found;                        /* networks the scan listed, 0..SCAN_MAX */
     char found_ssid[SCAN_MAX][BOARD_SSID_SIZE];   /* their names, for an answer by number */
+    volatile uint8_t wifi_cfg;        /* WIFI_CFG_*, for the WiFi LED (wifi_led_task) */
 } board_state;
 
+/* What the stored settings say about WiFi, for the on-board LED. */
+#define WIFI_CFG_NONE    0u   /* no network stored: blink fast */
+#define WIFI_CFG_STORED  1u   /* a network stored: blink slowly until joined, then on */
+#define WIFI_CFG_REFUSED 2u   /* the admin answered NONE (no WiFi wanted): off */
+
 static board_state *S = NULL;
+
+/** @brief Read again what the settings say about WiFi (S->wifi_cfg). */
+static void refresh_wifi_cfg(void)
+{
+    char ssid[BOARD_SSID_SIZE];
+    char pass[BOARD_PASS_SIZE];
+    uint8_t cfg;
+    if (S == NULL)
+    {
+        return;
+    }
+    if (board_no_wifi())
+    {
+        cfg = WIFI_CFG_REFUSED;
+    }
+    else
+    {
+        cfg = (board_wifi(ssid, pass) == 0) ? WIFI_CFG_STORED : WIFI_CFG_NONE;
+    }
+    memset(pass, 0, sizeof pass);
+    S->wifi_cfg = cfg;
+}
+
+/* The on-board LED (LED_BUILTIN, GPIO 15 on the LOLIN S2 Mini) shows the WiFi
+ * state, the same in both firmwares (Ronny, 2026-11-14):
+ *   no network stored            blinks fast (5 times a second)
+ *   stored, not joined           blinks slowly (once a second)
+ *   joined                       steady on
+ *   WiFi refused (NONE) or off   off
+ * HIGH lights it (assumed from the core's LED_BUILTIN; not checked on the board). */
+#define WIFI_LED_FAST_MS 100u
+#define WIFI_LED_SLOW_MS 500u
+#define WIFI_LED_TICK_MS 50u
+
+/** @brief FreeRTOS task: drive the WiFi LED. Never returns. */
+static void wifi_led_task(void *arg)
+{
+    uint32_t elapsed = 0;
+    bool lit = false;
+    (void)arg;
+    pinMode(LED_BUILTIN, OUTPUT);
+    for (;;)
+    {
+        uint8_t cfg = (S != NULL) ? S->wifi_cfg : WIFI_CFG_NONE;
+        bool want;
+        if (cfg == WIFI_CFG_REFUSED || (cfg == WIFI_CFG_STORED && WiFi.getMode() == WIFI_OFF))
+        {
+            want = false;   /* no WiFi wanted, or switched off (HDLCGW WIFI OFF) */
+        }
+        else if (cfg == WIFI_CFG_STORED && WiFi.status() == WL_CONNECTED)
+        {
+            want = true;
+        }
+        else
+        {
+            uint32_t half = (cfg == WIFI_CFG_NONE) ? WIFI_LED_FAST_MS : WIFI_LED_SLOW_MS;
+            want = ((elapsed / half) % 2u) == 0u;
+        }
+        if (want != lit)
+        {
+            lit = want;
+            digitalWrite(LED_BUILTIN, lit ? HIGH : LOW);
+        }
+        elapsed = elapsed + WIFI_LED_TICK_MS;
+        vTaskDelay(pdMS_TO_TICKS(WIFI_LED_TICK_MS));
+    }
+}
 
 /**
  * Keep a newly chosen firmware on trial (board.h). The Arduino core calls this
@@ -333,6 +406,8 @@ void board_start(board_firmware me, const char *version)
 
     record_slot(version);
     migrate_settings();
+    refresh_wifi_cfg();
+    (void)xTaskCreate(wifi_led_task, "WiFi LED", 2048, NULL, 1, NULL);
 
     delay(2); /* let the pull-up lift the pin before the first read */
     if (S->slot >= 0 && button_held())
@@ -565,6 +640,7 @@ static void set_no_wifi(bool no)
         (void)p.remove("nowifi");
     }
     p.end();
+    refresh_wifi_cfg();
 }
 
 int board_set_wifi_ssid(const char *ssid)
@@ -574,8 +650,11 @@ int board_set_wifi_ssid(const char *ssid)
         return -1;
     }
     /* A network named on purpose overrides an earlier "no WiFi" answer. */
+    int rc;
     set_no_wifi(false);
-    return put_text("ssid", ssid, BOARD_SSID_SIZE - 1u);
+    rc = put_text("ssid", ssid, BOARD_SSID_SIZE - 1u);
+    refresh_wifi_cfg();
+    return rc;
 }
 
 int board_set_wifi_pass(const char *pass)
@@ -594,6 +673,7 @@ int board_clear_wifi(void)
     (void)p.remove("pass");
     (void)p.remove("nowifi");   /* back to the start: the console asks again */
     p.end();
+    refresh_wifi_cfg();
     return 0;
 }
 

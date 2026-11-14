@@ -65,16 +65,8 @@ static bool g_line_active = false;
 /* STAT push timer. */
 static uint32_t g_last_stat_push_ms = 0;
 
-/* On-board LED, GPIO 15 on the LOLIN S2 Mini (LED_BUILTIN). Blinks on every
- * byte received from the host. */
-static bool g_led_state = HIGH;
-
-/** @brief Flip the on-board LED. */
-static void toggle_led(void)
-{
-    g_led_state = !g_led_state;
-    digitalWrite(LED_BUILTIN, g_led_state);
-}
+/* The on-board LED (GPIO 15) shows the WiFi state now, in both firmwares:
+ * ../common/board.cpp. It used to blink on every byte from the host. */
 
 /* ------------------------------------------------------ line -> host */
 
@@ -768,7 +760,6 @@ static void handle_host_input(void)
     if (got > 0)
     {
         g_usb_rx_bytes = g_usb_rx_bytes + (uint32_t)got;
-        toggle_led();
     }
     for (int i = 0; i < got; i++)
     {
@@ -955,8 +946,6 @@ void console_task_run(void *params)
 {
     (void)params;
 
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, g_led_state);
 
     hdlc_decoder_reset(&g_line_decoder);
     byte_frame_decoder_reset(&g_host_decoder);

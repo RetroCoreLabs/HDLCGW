@@ -288,11 +288,12 @@ bool wifi_task_mirror(void)
     return g_cfg.mirror;
 }
 
-int wifi_task_set_ssid(const char *ssid)
+int wifi_task_set_ssid(const char *typed)
 {
-    size_t len = strlen(ssid);
+    char ssid[WIFI_TASK_SSID_MAX + 1];
 
-    if (len == 0 || len > WIFI_TASK_SSID_MAX)
+    /* Spaces at the ends are dropped (board_trim_ssid says why). */
+    if (board_trim_ssid(typed, ssid, sizeof ssid) < 0)
     {
         return -1;
     }
@@ -439,7 +440,7 @@ void wifi_task_print_status(void)
         snprintf(ip, sizeof(ip), "none");
     }
     int rssi = (WiFi.status() == WL_CONNECTED) ? (int)WiFi.RSSI() : 0;
-    console_out_printf("WiFi: %s ssid=%s state=%s ip=%s rssi=%d hostname=%s reason=%u\r\n",
+    console_out_printf("WiFi: %s ssid=\"%s\" state=%s ip=%s rssi=%d hostname=%s reason=%u\r\n",
                        c.wifi_on ? "ON" : "OFF", c.ssid[0] != '\0' ? c.ssid : "(none)",
                        wifi_state_name(), ip, rssi, HOSTNAME, (unsigned)g_last_reason);
     switch (c.tcp_mode)
@@ -665,7 +666,8 @@ static void run_station(uint32_t now)
         WiFi.begin(g_live.ssid, g_live.pass[0] != '\0' ? g_live.pass : NULL);
         g_wifi_begun = true;
         g_next_wifi_try = now + WIFI_RETRY_MS;
-        snprintf(text, sizeof(text), "ssid=%s", g_live.ssid);
+        snprintf(text, sizeof(text), "ssid=\"%s\" reason=%u", g_live.ssid,
+                 (unsigned)g_last_reason);
         console_out_event(CONTROL_FRAME_EVENT_WIFI_CONNECTING, text);
         return;
     }

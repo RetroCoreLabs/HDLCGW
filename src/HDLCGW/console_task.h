@@ -73,6 +73,14 @@ void console_task_init(void);
 void console_task_show_prompt(void);
 
 /**
+ * @brief WIFI SETUP: open the WiFi questions (../common/board.h board_ask_wifi)
+ *        on the text console.
+ * @return false when the text console is not open (the command came as a
+ *         control frame): the questions need a keyboard.
+ */
+bool console_task_wifi_setup(void);
+
+/**
  * @brief Bit-stuff a complete frame onto the line and count it as sent.
  *
  * The stuffed frame is built in full, followed by one byte of idle ones so

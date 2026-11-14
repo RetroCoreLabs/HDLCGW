@@ -77,11 +77,15 @@ never the settings).
 When the USB text console opens (three ESC) and a setting the firmware needs is missing, it asks
 for it before showing the prompt. There is no login on USB: whoever holds the cable is the admin.
 
-- **WiFi network** (both firmwares): the board first lists the networks it can see, numbered
-  (about 3 s). Answer with a number from the list or a network name, then the password (shown as
-  `*`; Enter for an open network). `NONE` means this board runs without WiFi: stored, shared by
-  both firmwares, and not asked again until `WIFI SSID` sets a network (or `WIFI CLEAR` in
-  HDLCGW starts over). Enter skips it this time only.
+- **WiFi network** (both firmwares): the board lists the networks it can see, numbered, with
+  the signal as strong, good or weak (a few seconds; 2.4 GHz networks only, the ESP32-S2 has no
+  5 GHz radio). Type the number and Enter, then the password (shown as `*`; Enter for an open
+  network). A number that is not in the list is refused. Other answers: a network name (spaces
+  at its ends are dropped), `SCAN` to look again, `NONE` for no WiFi (stored, shared by both
+  firmwares, not asked again until `WIFI SETUP` or `WIFI SSID` sets a network), or Enter alone
+  to skip this time. No prompt and no event lines appear while a question waits.
+- **`WIFI SETUP`** asks the same WiFi questions at any time, on the USB text console, whether a
+  network is stored or not. Enter alone leaves it with nothing changed.
 - **Node number** (XMSGGW): 1 to 65535; 0 is not a node number. `RESET` starts the link with it.
 - **Telnet** (XMSGGW): an admin who logs in while no node number is stored is asked for it; a
   number typed next is stored, any other command skips the question.

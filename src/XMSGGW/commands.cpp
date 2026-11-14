@@ -69,8 +69,8 @@ static const command COMMANDS[] =
     { "REACH",   "REACH - Ask the peer whether it is there; STAT shows the answer", handle_reach },
     { "TERM",    "TERM CONNECT <system>|TYPE <text>|SHOW|STATUS|HANGUP - A terminal session "
                  "to a SINTRAN system, from the USB console",                   handle_term },
-    { "WIFI",    "WIFI [STATUS]|SCAN|SHOW|SSID <name>|PASS <password>|CONNECT - The WiFi "
-                 "network: state, list networks, set, join",                    handle_wifi },
+    { "WIFI",    "WIFI [STATUS]|SCAN|SETUP|SHOW|SSID <name>|PASS <password>|CONNECT - The "
+                 "WiFi network: state, list, pick from a list, set, join",                    handle_wifi },
     { "TTYP",    "TTYP [n] - Terminal type for new sessions (0 default, 93 = TDV 2200)", handle_ttyp },
     { "PARITY",  "PARITY [ON|OFF] - Even parity on typed keys for new sessions (ON default)",
       handle_parity },
@@ -735,6 +735,15 @@ static void handle_wifi(const char *args)
         board_wifi_scan(console_out_print);
         return;
     }
+    if (strcasecmp(args, "SETUP") == 0)
+    {
+        if (!console_task_wifi_setup())
+        {
+            console_out_println("WIFI SETUP asks questions: open the USB text console "
+                                "(ESC ESC ESC) and type it there.");
+        }
+        return;
+    }
     if (strcasecmp(args, "SHOW") == 0)
     {
         /* Ronny, 2026-11-12: the password may be shown on the USB console.
@@ -749,7 +758,7 @@ static void handle_wifi(const char *args)
         console_out_println("Joining the network again; WIFI STATUS shows when it is up.");
         return;
     }
-    console_out_println("Usage: WIFI [STATUS]|SCAN|SHOW|SSID <name>|PASS <password>|CONNECT");
+    console_out_println("Usage: WIFI [STATUS]|SCAN|SETUP|SHOW|SSID <name>|PASS <password>|CONNECT");
 }
 
 /**
@@ -954,6 +963,13 @@ int commands_shared_check(const char *line, bool admin, bool usb, char *why, siz
     if (!usb && strcasecmp(word, "TERM") == 0)
     {
         (void)snprintf(why, cap, "TERM is for the USB console; here use CONNECT <system>\r\n");
+        return -1;
+    }
+    if (strcasecmp(word, "WIFI") == 0 && strncasecmp(args, "SETUP", 5) == 0
+        && (args[5] == '\0' || args[5] == ' ') && !usb)
+    {
+        /* The questions are answered on the USB text console (board_ask_wifi). */
+        (void)snprintf(why, cap, "WIFI SETUP is for the USB console only\r\n");
         return -1;
     }
     if (strcasecmp(word, "WIFI") == 0 && strncasecmp(args, "SHOW", 4) == 0

@@ -13,6 +13,7 @@
 #include <esp_heap_caps.h>
 
 #include "console_task.h"
+#include "../common/board.h"
 #include "libhdlc/esp32s2/spi_rx_task.h"
 #include "libhdlc/esp32s2/spi_tx_task.h"
 #include "usb_tx_task.h"
@@ -261,6 +262,14 @@ void console_out_event(uint8_t code, const char *text)
     if (text == NULL)
     {
         text = "";
+    }
+    if (g_console_mode == CONSOLE_DEBUG && board_ask_active())
+    {
+        return;   /* a question waits for its answer: no event lines in the middle (Ronny) */
+    }
+    if (g_console_mode == CONSOLE_DEBUG && board_ask_active())
+    {
+        return;   /* a question waits for its answer: no event lines in the middle (Ronny) */
     }
     if (g_console_mode == CONSOLE_DEBUG)
     {

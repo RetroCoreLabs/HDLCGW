@@ -61,7 +61,8 @@ Not yet:
 ## Telnet
 
 Join the WiFi network first: the USB text console asks for it when none is stored (it lists the
-networks it can see), or `WIFI SSID`, `WIFI PASS`, `WIFI CONNECT`. The network is shared with
+networks it can see), `WIFI SETUP` asks the same at any time, or `WIFI SSID`, `WIFI PASS`,
+`WIFI CONNECT` by hand. The network is shared with
 HDLCGW, so one set in either firmware is used by both. Then `telnet <board ip>`.
 
 A new board has one user: **`admin`, password `admin`**. The first login must set a new password.
@@ -290,10 +291,10 @@ commands below work on telnet too:
 
 - every logged-in telnet user may run `STAT`, `INSPECT`, `TASK` and `WIFI` / `WIFI STATUS` /
   `WIFI SCAN`; the others are for the admin;
-- `TERM` (a terminal session printed on the USB port) and `WIFI SHOW` (the password) are for
-  the USB console only;
+- `TERM` (a terminal session printed on the USB port), `WIFI SHOW` (the password) and
+  `WIFI SETUP` (it asks questions) are for the USB console only;
 - these commands run in the USB task, not in the task that keeps the XMSG link, so a slow one
-  (`WIFI SCAN`, about 3 s) does not hold up the line. One runs at a time; a second one from
+  (`WIFI SCAN`, a few seconds) does not hold up the line. One runs at a time; a second one from
   another place is answered "try again".
 
 `HELP`, `INFO` and `EXIT` are the shared console's own. COMMAND control frames from a host
@@ -308,7 +309,8 @@ program still run the table below directly, `INFO` included.
 | `REACH` | ask the peer "are you there?"; `STAT` shows asked / answered |
 | `TERM CONNECT <system>\|TYPE <text>\|SHOW\|STATUS\|HANGUP` | a terminal session from the console |
 | `WIFI [STATUS]\|SSID <name>\|PASS <password>\|CONNECT` | the network for telnet |
-| `WIFI SCAN` | list the networks the board can see (about 3 s, 2.4 GHz only) |
+| `WIFI SCAN` | list the networks the board can see (a few seconds, 2.4 GHz only); a join attempt in progress is stopped so the scan can run |
+| `WIFI SETUP` | scan, pick a network by its number, type its password; USB console only |
 | `WIFI SHOW` | show the stored network name and password; USB console only |
 | `TTYP [n]` | terminal type for new sessions (0 default; 93 = TDV 2200) |
 | `PARITY [ON\|OFF]` | even parity on typed bytes for new sessions (ON default) |

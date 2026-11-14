@@ -43,6 +43,14 @@ void console_task_run(void *params);
 /** @brief Print the prompt of the USB setup questions' end ("XMSG# "). */
 void console_task_show_prompt(void);
 
+/**
+ * @brief WIFI SETUP: open the WiFi questions (../common/board.h board_ask_wifi)
+ *        on the text console.
+ * @return false when the text console is not open (the command came as a
+ *         control frame): the questions need a keyboard.
+ */
+bool console_task_wifi_setup(void);
+
 /* ------------------------------------------------ the USB text console
  *
  * One command list for USB and telnet (Ronny, 2026-11-12): once ESC ESC ESC

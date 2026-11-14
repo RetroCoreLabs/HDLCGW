@@ -15,6 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <esp_app_desc.h>
 #include <esp_ota_ops.h>
 #include <esp_heap_caps.h>
@@ -74,6 +75,7 @@ typedef struct
     char new_ssid[BOARD_SSID_SIZE];   /* typed name, kept until the password is in */
     int found;                        /* networks the scan listed, 0..SCAN_MAX */
     char found_ssid[SCAN_MAX][BOARD_SSID_SIZE];   /* their names, for an answer by number */
+    bool setup;                       /* the questions came from WIFI SETUP, not console start */
     volatile uint8_t wifi_cfg;        /* WIFI_CFG_*, for the WiFi LED (wifi_led_task) */
 } board_state;
 
@@ -643,14 +645,44 @@ static void set_no_wifi(bool no)
     refresh_wifi_cfg();
 }
 
-int board_set_wifi_ssid(const char *ssid)
+int board_trim_ssid(const char *in, char *out, size_t cap)
 {
-    if (ssid[0] == '\0')
+    size_t start = 0;
+    size_t end;
+
+    if (in == NULL || out == NULL || cap == 0u)
+    {
+        return -1;
+    }
+    end = strlen(in);
+    while (start < end && (in[start] == ' ' || in[start] == '\t'))
+    {
+        start++;
+    }
+    while (end > start && (in[end - 1u] == ' ' || in[end - 1u] == '\t'))
+    {
+        end--;
+    }
+    if (end == start || end - start > cap - 1u)
+    {
+        out[0] = '\0';
+        return -1;
+    }
+    memcpy(out, in + start, end - start);
+    out[end - start] = '\0';
+    return (int)(end - start);
+}
+
+int board_set_wifi_ssid(const char *typed)
+{
+    char ssid[BOARD_SSID_SIZE];
+    int rc;
+
+    if (board_trim_ssid(typed, ssid, sizeof ssid) < 0)
     {
         return -1;
     }
     /* A network named on purpose overrides an earlier "no WiFi" answer. */
-    int rc;
     set_no_wifi(false);
     rc = put_text("ssid", ssid, BOARD_SSID_SIZE - 1u);
     refresh_wifi_cfg();
@@ -706,9 +738,13 @@ int board_set_rate(uint32_t rate)
 
 
 static const char ASK_SSID_TEXT[] =
-    "WiFi network: its number above or its name; NONE for no WiFi (not asked again);\r\n"
-    "Enter to skip for now: ";
-static const char ASK_PASS_TEXT[] = "WiFi password (Enter for an open network): ";
+    "\r\n"
+    "Type the number of your network and press Enter.\r\n"
+    "  (or: its name if it is not listed, SCAN to look again,\r\n"
+    "   NONE for no WiFi at all, or just Enter to leave)\r\n"
+    "\r\n"
+    "Network: ";
+static const char ASK_PASS_TEXT[] = "Password (just Enter if the network is open): ";
 static const char ASK_NODE_TEXT[] = "Node number, 1 to 65535 (Enter to skip): ";
 
 int board_parse_node(const char *text, uint16_t *node)
@@ -738,6 +774,101 @@ int board_parse_node(const char *text, uint16_t *node)
     return 0;
 }
 
+/* A scan can fail to START when the radio is busy: just switched on, or in the
+ * middle of joining a network (the WiFi task retries a join every few seconds).
+ * The driver then answers WIFI_SCAN_FAILED (-2) at once, which is what made
+ * WIFI SCAN "give up immediately". So: start the scan without waiting,
+ * retry the start while it fails, and poll for the result with a deadline
+ * (arduino-esp32 WiFiScan: scanNetworks(true) starts, scanComplete() gives
+ * -1 while running, -2 when no scan runs, else the count). */
+#define SCAN_START_TRIES   20u     /* 20 x 250 ms = 5 s to get the scan started */
+#define SCAN_RETRY_MS      250u
+#define SCAN_DEADLINE_MS   15000u  /* a full scan of all channels takes about 2..4 s */
+#define SCAN_POLL_MS       100u
+
+/** @brief The network the station is set to join (empty if none), joined or not.
+ *  WiFi.SSID() is empty until joined (STA.cpp in core 3.3.12 reads the joined
+ *  AP), so this asks the driver for the configured name instead. */
+static void join_target(char *out, size_t cap)
+{
+    wifi_config_t cfg;
+    out[0] = '\0';
+    if (esp_wifi_get_config(WIFI_IF_STA, &cfg) == ESP_OK)
+    {
+        (void)snprintf(out, cap, "%.32s", (const char *)cfg.sta.ssid);
+    }
+}
+
+/**
+ * @brief Run one full WiFi scan and wait for it (up to about 20 s).
+ *
+ * Prints nothing unless the scan fails; then one line saying so.
+ *
+ * @param[in] print  Where a failure line goes.
+ * @return Networks found (>= 0; read them with WiFi.SSID(i) and so on, then
+ *         WiFi.scanDelete()), or WIFI_SCAN_FAILED.
+ */
+static int16_t scan_wait(void (*print)(const char *text))
+{
+    uint32_t waited = 0;
+    uint32_t tries = 0;
+    int16_t n;
+    char target[BOARD_SSID_SIZE];
+
+    if ((WiFi.getMode() & WIFI_MODE_STA) == 0)
+    {
+        if (!WiFi.enableSTA(true))   /* a scan needs the station side on */
+        {
+            print("The WiFi radio could not be switched on, so nothing was scanned.\r\n");
+            return WIFI_SCAN_FAILED;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    join_target(target, sizeof target);
+    WiFi.scanDelete();   /* drop an old result, or scanNetworks(true) returns it */
+    for (;;)
+    {
+        n = WiFi.scanNetworks(true, true);
+        if (n != WIFI_SCAN_FAILED)
+        {
+            break;
+        }
+        tries++;
+        if (tries == 1u && WiFi.status() != WL_CONNECTED && target[0] != '\0')
+        {
+            /* The driver will not scan while a join is in progress, and the
+             * WiFi task starts a new join every 20 s, so a board with a wrong
+             * name stored never let a scan through (bench 2026-11-14, COM20).
+             * Stop this attempt; the WiFi task starts the next one by itself.
+             * Not printed: Ronny wants no radio details here. */
+            (void)WiFi.disconnect(false, false);
+            vTaskDelay(pdMS_TO_TICKS(200));
+        }
+        if (tries >= SCAN_START_TRIES)
+        {
+            print("The WiFi radio stayed busy for 5 s and never started the scan. Try again.\r\n");
+            return WIFI_SCAN_FAILED;
+        }
+        vTaskDelay(pdMS_TO_TICKS(SCAN_RETRY_MS));
+    }
+    for (;;)
+    {
+        n = WiFi.scanComplete();
+        if (n >= 0)
+        {
+            return n;
+        }
+        if (n == WIFI_SCAN_FAILED || waited >= SCAN_DEADLINE_MS)
+        {
+            print("The scan stopped before it finished. Try again.\r\n");
+            WiFi.scanDelete();
+            return WIFI_SCAN_FAILED;
+        }
+        vTaskDelay(pdMS_TO_TICKS(SCAN_POLL_MS));
+        waited = waited + SCAN_POLL_MS;
+    }
+}
+
 /**
  * @brief List the networks the board can see, numbered, and keep their names
  *        so the answer can be a number. Blocks about 3 s (the radio listens on
@@ -745,20 +876,40 @@ int board_parse_node(const char *text, uint16_t *node)
  *        Only called while no network is stored, so the WiFi task is not
  *        using the radio.
  */
+/** @brief A signal strength in words, for people: dBm means nothing to most. */
+static const char *signal_words(int32_t rssi)
+{
+    if (rssi >= -60)
+    {
+        return "strong";
+    }
+    if (rssi >= -75)
+    {
+        return "good";
+    }
+    return "weak";
+}
+
 static void scan_networks(void)
 {
     char text[96];
     int16_t n;
 
     S->found = 0;
-    S->ops->print("Looking for networks (about 3 s)...\r\n");
-    n = WiFi.scanNetworks(false, true);
-    if (n <= 0)
+    S->ops->print("Looking for networks (a few seconds)...\r\n\r\n");
+    n = scan_wait(S->ops->print);
+    if (n < 0)
     {
-        S->ops->print("  none found\r\n");
+        return;
+    }
+    if (n == 0)
+    {
+        S->ops->print("No networks found. This board sees 2.4 GHz networks only, not 5 GHz.\r\n");
         WiFi.scanDelete();
         return;
     }
+    S->ops->print("   #  Network                           Signal\r\n");
+    S->ops->print("  --  --------------------------------  -------\r\n");
     for (int16_t i = 0; i < n && S->found < SCAN_MAX; i++)
     {
         String name = WiFi.SSID((uint8_t)i);
@@ -768,9 +919,9 @@ static void scan_networks(void)
         }
         memcpy(S->found_ssid[S->found], name.c_str(), name.length() + 1u);
         S->found++;
-        (void)snprintf(text, sizeof text, "  %2d  %-32s %4d dBm  %s\r\n", S->found,
-                       name.c_str(), (int)WiFi.RSSI((uint8_t)i),
-                       (WiFi.encryptionType((uint8_t)i) == WIFI_AUTH_OPEN) ? "open" : "password");
+        (void)snprintf(text, sizeof text, "  %2d  %-32s  %s%s\r\n", S->found, name.c_str(),
+                       signal_words(WiFi.RSSI((uint8_t)i)),
+                       (WiFi.encryptionType((uint8_t)i) == WIFI_AUTH_OPEN) ? "  (open)" : "");
         S->ops->print(text);
     }
     WiFi.scanDelete();
@@ -819,6 +970,22 @@ bool board_ask_start(const board_ask_ops *ops)
     return ask_node_or_end();
 }
 
+bool board_ask_wifi(const board_ask_ops *ops)
+{
+    if (S == NULL || ops == NULL || ops->print == NULL || ops->set_ssid == NULL
+        || ops->set_pass == NULL)
+    {
+        return false;
+    }
+    S->ops = ops;
+    S->ask = ASK_SSID;
+    S->setup = true;
+    ops->print("\r\n=== WiFi setup ===\r\n\r\n");
+    scan_networks();
+    ops->print(ASK_SSID_TEXT);
+    return true;
+}
+
 bool board_ask_active(void)
 {
     return S != NULL && S->ask != ASK_NONE;
@@ -829,11 +996,35 @@ bool board_ask_hidden(void)
     return S != NULL && S->ask == ASK_PASS;
 }
 
-void board_ask_answer(const char *line)
+void board_ask_answer(const char *typed)
 {
     char text[96];
+    char trimmed[BOARD_PASS_SIZE + 1u];
+    const char *line = typed;
     uint16_t node = 0;
-    size_t len = strlen(line);
+    size_t len = strlen(typed);
+
+    /* Spaces at the ends of a network name or a number are typing slips; a
+     * password is kept exactly as typed (a space can be part of it). */
+    if (S != NULL && S->ask != ASK_PASS)
+    {
+        int n = board_trim_ssid(typed, trimmed, sizeof trimmed);
+        line = (n < 0) ? "" : trimmed;
+        len = (n < 0) ? 0u : (size_t)n;
+        if (n < 0 && typed[0] != '\0')
+        {
+            size_t k = 0;
+            while (typed[k] == ' ' || typed[k] == '\t')
+            {
+                k++;
+            }
+            if (typed[k] != '\0')
+            {
+                line = typed;   /* too long: let the length check below say so */
+                len = strlen(typed);
+            }
+        }
+    }
 
     if (S == NULL)
     {
@@ -844,21 +1035,38 @@ void board_ask_answer(const char *line)
     case ASK_SSID:
         if (len == 0u)
         {
-            S->ops->print("Skipped; asked again next time. WIFI SSID and WIFI PASS set it.\r\n");
+            S->ops->print(S->setup ? "WiFi setup left; nothing was changed.\r\n\r\n"
+                                   : "Skipped; asked again next time. WIFI SETUP asks now.\r\n");
+            S->setup = false;
             (void)ask_node_or_end();
             return;
         }
         if (strcasecmp(line, "NONE") == 0)
         {
             set_no_wifi(true);
-            S->ops->print("No WiFi; not asked again. WIFI SSID <name> sets a network later.\r\n");
+            S->ops->print("No WiFi; not asked again. WIFI SETUP sets a network later.\r\n");
+            S->setup = false;
             (void)ask_node_or_end();
             return;
         }
-        if (board_parse_node(line, &node) == 0 && node <= (uint16_t)S->found)
+        if (strcasecmp(line, "SCAN") == 0)
         {
-            /* A number from the list. (A network whose name is all digits
-             * cannot be picked by typing it; pick its number instead.) */
+            scan_networks();
+            S->ops->print(ASK_SSID_TEXT);
+            return;
+        }
+        if (board_parse_node(line, &node) == 0)
+        {
+            /* A number always means a line of the list. (A network whose name
+             * is all digits is picked by its number, not by typing it.) */
+            if (node > (uint16_t)S->found)
+            {
+                (void)snprintf(text, sizeof text, "There is no number %u in the list.\r\n",
+                               (unsigned)node);
+                S->ops->print(text);
+                S->ops->print(ASK_SSID_TEXT);
+                return;
+            }
             memcpy(S->new_ssid, S->found_ssid[node - 1u], BOARD_SSID_SIZE);
         }
         else if (len > BOARD_SSID_SIZE - 1u)
@@ -869,9 +1077,23 @@ void board_ask_answer(const char *line)
         }
         else
         {
+            bool seen = false;
             memcpy(S->new_ssid, line, len + 1u);
+            for (int i = 0; i < S->found; i++)
+            {
+                if (strcmp(S->found_ssid[i], line) == 0)
+                {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen)
+            {
+                S->ops->print("Note: that name was not in the list (hidden network, or a typing\r\n"
+                              "mistake? Capitals count).\r\n");
+            }
         }
-        (void)snprintf(text, sizeof text, "Network %s.\r\n", S->new_ssid);
+        (void)snprintf(text, sizeof text, "\r\nNetwork: \"%s\"\r\n", S->new_ssid);
         S->ops->print(text);
         S->ask = ASK_PASS;
         S->ops->print(ASK_PASS_TEXT);
@@ -889,7 +1111,9 @@ void board_ask_answer(const char *line)
         }
         else
         {
-            (void)snprintf(text, sizeof text, "Network %s stored; joining it now.\r\n", S->new_ssid);
+            (void)snprintf(text, sizeof text,
+                           "\r\nSaved. Joining \"%s\" now; the LED stays on once joined.\r\n\r\n",
+                           S->new_ssid);
             S->ops->print(text);
             if (S->ops->wifi_join != NULL)
             {
@@ -897,6 +1121,7 @@ void board_ask_answer(const char *line)
             }
         }
         memset(S->new_ssid, 0, sizeof S->new_ssid);
+        S->setup = false;
         (void)ask_node_or_end();
         return;
     case ASK_NODE:
@@ -940,16 +1165,16 @@ void board_wifi_scan(void (*print)(const char *text))
     {
         return;
     }
-    if (WiFi.getMode() == WIFI_OFF)
+    print("Looking for networks (a few seconds)...\r\n");
+    n = scan_wait(print);
+    if (n < 0)
     {
-        (void)WiFi.mode(WIFI_STA);   /* a scan needs the radio on as a station */
+        return;   /* scan_wait said why */
     }
-    print("Scanning (about 3 s)...\r\n");
-    n = WiFi.scanNetworks(false, true);
-    if (n <= 0)
+    if (n == 0)
     {
-        (void)snprintf(text, sizeof text, "No networks found (%d).\r\n", (int)n);
-        print(text);
+        print("No networks found: none in range, or the router is on 5 GHz only\r\n"
+              "(this board has 2.4 GHz only).\r\n");
         WiFi.scanDelete();
         return;
     }

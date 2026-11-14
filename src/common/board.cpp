@@ -20,6 +20,8 @@
 #include <esp_ota_ops.h>
 #include <esp_heap_caps.h>
 #include <esp_partition.h>
+#include <esp_system.h>
+#include <esp_timer.h>
 #include <stdlib.h>
 
 /* The shared NVS namespace. Keys: "ssid", "pass", "rate"; "fw1"/"fw2" and
@@ -984,6 +986,42 @@ bool board_ask_wifi(const board_ask_ops *ops)
     scan_networks();
     ops->print(ASK_SSID_TEXT);
     return true;
+}
+
+void board_print_restart(void (*print)(const char *text))
+{
+    /* esp_reset_reason_t, esp_system.h (ESP-IDF in core 3.3.12), in order. */
+    static const char *const WHY[] = {
+        "unknown",
+        "power on",
+        "reset pin",
+        "restart by the firmware (RESET, FIRMWARE SWITCH, a flash)",
+        "CRASH (exception or panic)",
+        "interrupt watchdog (a task blocked interrupts too long)",
+        "task watchdog (a task hung)",
+        "other watchdog",
+        "deep sleep",
+        "brownout (the supply voltage dropped)",
+        "SDIO",
+        "USB",
+        "JTAG",
+        "eFuse error",
+        "power glitch",
+        "CPU lock up",
+    };
+    char text[160];
+    esp_reset_reason_t r = esp_reset_reason();
+    uint32_t s = (uint32_t)(esp_timer_get_time() / 1000000LL);
+    const char *why = ((unsigned)r < sizeof WHY / sizeof WHY[0]) ? WHY[r] : "not known to this firmware";
+
+    if (print == NULL)
+    {
+        return;
+    }
+    (void)snprintf(text, sizeof text, "Last start: %s (code %d); running %luh %02lum %02lus\r\n",
+                   why, (int)r, (unsigned long)(s / 3600u), (unsigned long)((s / 60u) % 60u),
+                   (unsigned long)(s % 60u));
+    print(text);
 }
 
 bool board_ask_active(void)

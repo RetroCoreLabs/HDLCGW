@@ -10,6 +10,7 @@
 ** Ronny Hansen                                                          **
 ***************************************************************************/
 #include "wifi_task.h"
+#include "usb_tx_task.h"
 #include "../common/board.h"
 
 #include <stdlib.h>
@@ -89,6 +90,7 @@ typedef struct
     uint8_t tcp_mode;           /* wifi_task_tcp_mode */
     bool wifi_on;
     bool mirror;
+    bool wireless;              /* the peer stands in for the cable (wifi_task_wireless) */
 } wifi_settings;
 
 static wifi_settings g_cfg;                     /* written by the console under g_cfg_mutex */
@@ -169,6 +171,7 @@ static void load_settings(void)
         g_cfg.tcp_mode = prefs.getUChar("tmode", WIFI_TASK_TCP_SERVER);
         g_cfg.wifi_on = prefs.getUChar("won", 0) != 0;
         g_cfg.mirror = prefs.getUChar("mirror", 0) != 0;
+        g_cfg.wireless = prefs.getUChar("wless", 0) != 0;
         prefs.end();
     }
     /* The network is shared with XMSGGW (../common/board.h). */
@@ -288,6 +291,11 @@ bool wifi_task_mirror(void)
     return g_cfg.mirror;
 }
 
+bool wifi_task_wireless(void)
+{
+    return g_cfg.wireless;
+}
+
 int wifi_task_set_ssid(const char *typed)
 {
     char ssid[WIFI_TASK_SSID_MAX + 1];
@@ -356,6 +364,14 @@ int wifi_task_set_tcp(wifi_task_tcp_mode mode, const char *host, uint16_t port)
         store_string("thost", g_cfg.host);
     }
     return 0;
+}
+
+void wifi_task_set_wireless(bool on)
+{
+    cfg_lock();
+    g_cfg.wireless = on;
+    cfg_unlock();
+    store_number("wless", on ? 1u : 0u);
 }
 
 void wifi_task_set_mirror(bool on)
@@ -462,6 +478,7 @@ void wifi_task_print_status(void)
         break;
     }
     console_out_printf("MIRROR: %s\r\n", c.mirror ? "ON" : "OFF");
+    console_out_printf("WIRELESS: %s\r\n", c.wireless ? "ON (the TCP peer replaces the cable)" : "OFF");
     console_out_printf("TCP last drop: %s, error %d, after %u ms connected (%u drops)\r\n",
                        g_drop_why, g_drop_err, (unsigned)g_drop_after_ms,
                        (unsigned)g_stats.peer_drops);
@@ -802,6 +819,27 @@ static void run_tcp(uint32_t now)
  */
 static bool peer_frame_to_line(void)
 {
+    if (g_cfg.wireless)
+    {
+        /* WIRELESS ON: the peer stands in for the cable, so its frames go to
+         * USB as if they had come off the line. A full USB ring drops the
+         * frame and counts it (usb_tx_task_dropped, in STAT). */
+        static uint8_t *usb_out = NULL;   /* PSRAM: static data is full on this build */
+        int n;
+        if (usb_out == NULL)
+        {
+            usb_out = (uint8_t *)heap_caps_malloc(2 + 2 * BYTE_FRAME_MAX, MALLOC_CAP_SPIRAM);
+            if (usb_out == NULL)
+            {
+                g_stats.frames_from_peer++;
+                return true;   /* no buffer: the frame is lost (cannot happen with PSRAM) */
+            }
+        }
+        n = byte_frame_encode(g_peer_decoder.buffer, g_peer_decoder.length, usb_out);
+        g_stats.frames_from_peer++;
+        (void)usb_tx_task_push(usb_out, n);
+        return true;
+    }
     /* Worst case on the line: two bytes per frame byte after bit stuffing,
      * the two flags, the closing pad and the idle byte
      * (console_task_send_line_frame). */

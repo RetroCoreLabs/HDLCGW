@@ -68,6 +68,7 @@ static void handle_log(const char *args);
 static void handle_wifi(const char *args);
 static void handle_tcp(const char *args);
 static void handle_mirror(const char *args);
+static void handle_wireless(const char *args);
 static void handle_firmware(const char *args);
 
 // clang-format off
@@ -96,6 +97,8 @@ static const command COMMANDS[] =
     { "WIFI",      "WIFI SSID <n>|PASS <p>|ON|OFF|CONNECT|STATUS|SCAN|SETUP|SHOW|CLEAR", handle_wifi },
     { "TCP",       "TCP SERVER [port]|CLIENT <host> <port>|OFF (frames over TCP)", handle_tcp },
     { "MIRROR",    "MIRROR ON|OFF - Line frames to USB too while a TCP peer is on", handle_mirror },
+    { "WIRELESS",  "WIRELESS ON|OFF - The TCP peer replaces the cable (USB frames go to it)",
+      handle_wireless },
     { "LOG",       "LOG [0..5] - 0 off, 1 error, 2 warn, 3 info, 4 debug, 5 trace", handle_log },
 };
 // clang-format on
@@ -137,6 +140,10 @@ static void print_wifi_help(void)
     console_out_println("  TCP OFF              - No TCP; line frames go to USB");
     console_out_println(
         "  MIRROR ON|OFF        - With a TCP peer, send line frames to USB as well");
+    console_out_println(
+        "  WIRELESS ON|OFF      - The TCP peer replaces the cable: frames from USB go to the");
+    console_out_println(
+        "                         peer, the peer's frames come out on USB; the line is unused");
     console_out_println(
         "  The TCP stream carries RFC 1662 frames with FCS, like USB; commands stay on USB.");
 }
@@ -669,6 +676,7 @@ static void handle_info(const char *args)
 {
     (void)args;
     console_out_printf("Build: %s %s\r\n", __DATE__, __TIME__);
+    board_print_restart(console_out_print);
     console_out_printf("FreeRTOS version: %s\r\n", tskKERNEL_VERSION_NUMBER);
     console_out_printf("ESP-IDF: %s, chip %s rev %u, %u MHz\r\n", ESP.getSdkVersion(),
                   ESP.getChipModel(), (unsigned)ESP.getChipRevision(),
@@ -863,6 +871,33 @@ static void handle_tcp(const char *args)
     else
     {
         console_out_println("Use TCP SERVER [port], TCP CLIENT <host> <port> or TCP OFF.");
+    }
+}
+
+/**
+ * @brief WIRELESS command: the TCP peer replaces the cable (wifi_task.h).
+ * @param[in] args  ON or OFF; NULL or empty shows the state.
+ */
+static void handle_wireless(const char *args)
+{
+    if (args == NULL || *args == '\0')
+    {
+        console_out_printf("WIRELESS is %s\r\n", wifi_task_wireless() ? "ON" : "OFF");
+    }
+    else if (strcasecmp(args, "ON") == 0)
+    {
+        wifi_task_set_wireless(true);
+        console_out_println("WIRELESS ON: frames from USB go to the TCP peer, and the peer's "
+                            "frames come out on USB. The line is not used.");
+    }
+    else if (strcasecmp(args, "OFF") == 0)
+    {
+        wifi_task_set_wireless(false);
+        console_out_println("WIRELESS OFF: frames from USB go to the line again.");
+    }
+    else
+    {
+        console_out_println("Use WIRELESS ON or WIRELESS OFF.");
     }
 }
 

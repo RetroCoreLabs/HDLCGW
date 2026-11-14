@@ -116,6 +116,24 @@ bool wifi_task_tcp_connected(void);
 bool wifi_task_mirror(void);
 
 /**
+ * @brief Whether the TCP peer takes the place of the cable (WIRELESS ON).
+ *
+ * Ronny, 2026-11-14: two boards joined over WiFi as a loopback with no cable,
+ * only USB. With WIRELESS ON, data frames from USB go to the TCP peer instead
+ * of the line, and frames from the peer come out on USB instead of the line.
+ * Frames from the line (none without a cable) still go to USB. Off by default.
+ *
+ * @return true when WIRELESS is on.
+ */
+bool wifi_task_wireless(void);
+
+/**
+ * @brief Switch WIRELESS on or off (stored, survives a reset).
+ * @param[in] on  true for on.
+ */
+void wifi_task_set_wireless(bool on);
+
+/**
  * @brief Set the station's SSID (stored in NVS). Takes effect at the next
  *        connect.
  * @param[in] ssid  1..WIFI_TASK_SSID_MAX bytes.

@@ -234,6 +234,7 @@ static void handle_info(const char *args)
     (void)args;
     node_task_get_status(&st);
     console_out_printf("XMSGGW %s, build %s %s\r\n", XMSGGW_VERSION, __DATE__, __TIME__);
+    board_print_restart(console_out_print);
     console_out_printf("FreeRTOS version: %s\r\n", tskKERNEL_VERSION_NUMBER);
     console_out_printf("ESP-IDF: %s, chip %s rev %u, %u MHz\r\n", ESP.getSdkVersion(),
                        ESP.getChipModel(), (unsigned)ESP.getChipRevision(),

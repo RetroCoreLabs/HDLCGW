@@ -3,19 +3,48 @@
 Every defect that is known and not fixed at its root is listed here by name, with what was
 measured. A defect leaves this file only when the cause is fixed and a bench run shows it gone.
 
-No open defects (2026-11-09 12:40). One known capacity limit, L1 below, kept by Ronny's
+One open defect: [B1](#b1---a-second-s2-mini-com20-drops-off-usb-under-traffic) (2026-11-14). One known capacity limit, L1 below, kept by Ronny's
 decision: this phase of the design stops at 307200 bit/s (983000 needs the BUSY signal of the
 PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by the host.
 
 <!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
 **Contents**
 
+- [B1 - a second S2 Mini (COM20) drops off USB under traffic](#b1---a-second-s2-mini-com20-drops-off-usb-under-traffic)
 - [The TCP findings of 2026-11-09 (first sustained TCP run 10:42, last fix 12:35)](#the-tcp-findings-of-2026-11-09-first-sustained-tcp-run-1042-last-fix-1235)
   - [L1 (was T1) - whole line frames dropped on the way to the TCP peer when the CPU runs out](#l1-was-t1---whole-line-frames-dropped-on-the-way-to-the-tcp-peer-when-the-cpu-runs-out)
   - [T2 - the TCP connection stops, and the ESP keeps a dead peer (CLOSED 12:35)](#t2---the-tcp-connection-stops-and-the-esp-keeps-a-dead-peer-closed-1235)
   - [T3 - bad frames off the line during TCP traffic (CLOSED 12:35)](#t3---bad-frames-off-the-line-during-tcp-traffic-closed-1235)
 
 <!-- /contents -->
+
+## B1 - a second S2 Mini (COM20) drops off USB under traffic
+
+Open, 2026-11-14. Cause not found.
+
+Setup: two LOLIN S2 Minis with the same build (HDLCGW 0.3.5, built 18:07:00 that day), both on
+WiFi, joined over TCP with WIRELESS ON (the TCP peer replaces the cable), PC test tool
+`hdlc-loopback --port A --port-b B --no-baud --size 256`. Board A is the one on the bench since
+November (COM10). Board B is a bare S2 Mini first used that day (COM20, nothing on its pins).
+
+What was measured:
+
+- Every run, within the first seconds of traffic, Windows reports COM20 "A device attached to
+  the system is not functioning". The port then stays listed but every open hangs ("semaphore
+  timeout") until RST. COM10 kept running in every run, uptime unbroken.
+- It stayed with board B whichever board listened and whichever dialled, and whichever port
+  the tool opened first.
+- It also happened with WIRELESS OFF and no WiFi traffic (LOOPBACK ON, frames to the line).
+- After two of the failures INFO on board B said "Last start: other watchdog (code 7)".
+  esptool's own reset also uses a watchdog, so that line alone does not prove a hang.
+- Board B, right after a restart: 0 line bytes received (its receive pins are not picking up
+  noise), free internal memory 14,804 bytes; board A, which does not fail, 14,364.
+- Once board B was found in download mode (USB 303A:0002, COM9) after a failure.
+- Board B had already restarted once by itself earlier that day, at the end of a WIFI SETUP.
+- Moved to another cable and PC port, board B did not show on USB at all; not followed up.
+
+Not yet done: read the ESP32-S2's crash report, which it prints on GPIO 43 (TX) at 115200 baud
+and not on USB, with a USB-to-serial adapter while the failure happens.
 
 ## The TCP findings of 2026-11-09 (first sustained TCP run 10:42, last fix 12:35)
 

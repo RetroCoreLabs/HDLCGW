@@ -212,6 +212,14 @@ bool board_ask_active(void);
  */
 bool board_ask_wifi(const board_ask_ops *ops);
 
+/**
+ * @brief Print why the board last started (power on, crash, watchdog, ...) and
+ *        how long it has run since. For INFO in both firmwares: a board that
+ *        restarts by itself must say why (bench 2026-11-14).
+ * @param[in] print  Where the line goes.
+ */
+void board_print_restart(void (*print)(const char *text));
+
 /** @brief Whether the waiting answer is a password: echo '*' instead of the letters. */
 bool board_ask_hidden(void);
 

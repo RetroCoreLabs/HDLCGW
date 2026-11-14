@@ -175,7 +175,7 @@ sensitive. `HELP` prints this list on the board.
 | Command | What it does |
 |---|---|
 | `HELP [WIFI]` | All commands, or only the WiFi and TCP ones |
-| `INFO` | Build date, FreeRTOS and ESP-IDF versions, chip, heap and PSRAM free |
+| `INFO` | Build date, why the board last started (power on, crash, watchdog, a restart by the firmware...) and how long it has run, FreeRTOS and ESP-IDF versions, chip, heap and PSRAM free |
 | `STAT` | Frame counts sent and received, line and USB byte counters, drops, ring high water, timing |
 | `TASK` | Each FreeRTOS task: state, priority, stack high water, CPU time |
 | `BAUD <rate>\|MAX\|DEFAULT` | Set the transmit clock, 9600..983000 bit/s (default 38400). No argument shows it |
@@ -219,6 +219,7 @@ name and passphrase are shared with XMSGGW: set them in either firmware. `BAUD` 
 | `TCP OFF` | No TCP; line frames go to USB |
 | `TCP DEBUG` | The client socket, the gateway's buffers, the WiFi receive counters and lwIP's own state per connection, for fault finding |
 | `MIRROR ON\|OFF` | With a TCP peer connected, send line frames to USB as well |
+| `WIRELESS ON\|OFF` | The TCP peer replaces the cable: frames from USB go to the peer and the peer's frames come out on USB; the line is not used. For a test of two boards over WiFi with no cable (one `TCP SERVER`, the other `TCP CLIENT` to it). Stored; off by default. Not yet proven on two boards: see [BUGS.md](BUGS.md) B1 |
 
 **First-time setup**, no network configured yet. Opening the text console (ESC ESC ESC) asks by
 itself: it lists the networks it can see, takes a number from that list or a name, then the
@@ -235,12 +236,13 @@ WIFI STATUS
 TCP SERVER
 ```
 
-`WIFI STATUS` answers with four lines a program can parse:
+`WIFI STATUS` answers with five lines a program can parse:
 
 ```
-WiFi: ON ssid=<name> state=CONNECTED ip=192.168.1.50 rssi=-52 hostname=hdlcgw reason=0
+WiFi: ON ssid="<name>" state=CONNECTED ip=192.168.1.50 rssi=-52 hostname=hdlcgw reason=0
 TCP: SERVER port=1362 listening=yes peer=none
 MIRROR: OFF
+WIRELESS: OFF
 TCP last drop: none, error 0, after 0 ms connected (0 drops)
 ```
 
@@ -252,7 +254,9 @@ mask, gateway and DNS server are not reported.
 
 **What the TCP stream carries**: the same RFC 1662 frames with checksum as USB, nothing else -
 no idle flags and no control frames. While a peer is connected, frames off the line go to the
-peer (and to USB too with `MIRROR ON`), and the peer's frames go onto the line. A new peer
+peer (and to USB too with `MIRROR ON`), and the peer's frames go onto the line. With
+`WIRELESS ON` the peer takes the line's place instead: USB frames go to it and its frames come
+out on USB. A new peer
 replaces the old one. A peer that takes nothing for 10 s is dropped, and TCP keepalive finds
 one that vanished. Commands, replies and the log always stay on USB.
 

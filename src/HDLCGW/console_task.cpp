@@ -305,19 +305,28 @@ static HOT_PATH_CODE void handle_line_bytes(void)
 
 void console_task_send_host_frame(const uint8_t *frame, int len)
 {
-    static uint8_t out[2 + 2 * BYTE_FRAME_MAX];
+    /* PSRAM, not static data: static data is full on this build (2026-11-14). */
+    static uint8_t *out = NULL;
     int n;
 
     if (len < 0 || len > BYTE_FRAME_MAX)
     {
         return;
     }
+    if (out == NULL)
+    {
+        out = (uint8_t *)heap_caps_malloc(2 + 2 * BYTE_FRAME_MAX, MALLOC_CAP_SPIRAM);
+        if (out == NULL)
+        {
+            return;   /* cannot happen with the board's PSRAM */
+        }
+    }
     n = byte_frame_encode(frame, len, out);
     /* A connected TCP peer gets the line's frames; USB gets them too only
      * when MIRROR is on. Without a peer, USB as always. Never written to
      * Serial from here: see usb_tx_task.h for why. A drop is counted in the
      * ring that dropped it and shows in STAT. */
-    if (!wifi_task_take_host_frame(out, n) || wifi_task_mirror())
+    if (wifi_task_wireless() || !wifi_task_take_host_frame(out, n) || wifi_task_mirror())
     {
         (void)usb_tx_task_push(out, n);
     }
@@ -682,6 +691,21 @@ static HOT_PATH_CODE void handle_forwarding_input(uint8_t c)
         if (control_frame_parse(g_host_decoder.buffer, g_host_decoder.length, &cf))
         {
             handle_control_frame(&cf);
+        }
+        else if (wifi_task_wireless())
+        {
+            /* WIRELESS ON: the TCP peer stands in for the cable. With no peer
+             * the frame is lost, as on a line with no cable in it. */
+            static uint8_t *peer_out = NULL;   /* PSRAM: static data is full on this build */
+            if (peer_out == NULL)
+            {
+                peer_out = (uint8_t *)heap_caps_malloc(2 + 2 * BYTE_FRAME_MAX, MALLOC_CAP_SPIRAM);
+            }
+            if (peer_out != NULL)
+            {
+                int n = byte_frame_encode(g_host_decoder.buffer, g_host_decoder.length, peer_out);
+                (void)wifi_task_take_host_frame(peer_out, n);
+            }
         }
         else
         {

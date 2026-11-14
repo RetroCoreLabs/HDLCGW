@@ -20,7 +20,7 @@ PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by
 
 ## B1 - a second S2 Mini (COM20) drops off USB under traffic
 
-Open, 2026-11-14. Cause not found.
+Open, 2026-11-14. Points to board B's supply (see the end of this entry); not proven.
 
 Setup: two LOLIN S2 Minis with the same build (HDLCGW 0.3.5, built 18:07:00 that day), both on
 WiFi, joined over TCP with WIRELESS ON (the TCP peer replaces the cable), PC test tool
@@ -43,8 +43,33 @@ What was measured:
 - Board B had already restarted once by itself earlier that day, at the end of a WIFI SETUP.
 - Moved to another cable and PC port, board B did not show on USB at all; not followed up.
 
-Not yet done: read the ESP32-S2's crash report, which it prints on GPIO 43 (TX) at 115200 baud
-and not on USB, with a USB-to-serial adapter while the failure happens.
+Later the same day (board B now COM22, on a PC port directly and a new cable; hub and cable
+were changed together, so which of the two mattered is not known):
+
+- In download mode, flash reads from board B are now clean (1.1 s for 64 KB); through the hub
+  they failed. The crash dump area in flash is blank: no crash was recorded.
+- WIRELESS traffic now runs (0 bad, 0 lost, about 240 and 137 kbit/s) until board B restarts,
+  7 to 10 s in. INFO afterwards: "Last start: other watchdog (code 7)" and, from the line INFO
+  now prints, "Chip reset cause: 16, RTC watchdog, whole chip".
+- Test build with the chip's low-voltage (brownout) detector switched off: no restart any more.
+  After 1 to 18 s the PC still gets "device not functioning" on writes, but the board keeps
+  running: a status line it printed every 2 s over USB showed the console task running, the
+  USB stack mounted and connected, nothing waiting in its receive buffer, and the text reached
+  the PC. Only the PC-to-board direction had failed, on the PC side.
+- Test build with the detector on and the WiFi send power cut to 8.5 dBm: two 60 s runs with no
+  restart and no USB error. But the radio link of board B became poor (33 % ping loss, TCP
+  stalls), so this is a test, not a fix.
+- The esp-idf "hint" of what started a restart cannot be read by the firmware: it is 0 even
+  right after a RESET command, so the system start clears it first.
+
+What this points to, not measured directly: when board B's WiFi sends at full power, its supply
+dips. The dip trips the low-voltage detector, and the restart that starts does not finish, so
+the RTC watchdog ends it (cause 16). With the detector off, the same dip upsets USB. Board A,
+same firmware, never does this. No voltage has been measured; that needs an oscilloscope on the
+board's 3V3 pin during traffic, or board B on another supply.
+
+Does not fit yet: the failure seen with WIRELESS OFF (above) was before the change of hub and
+cable, and has not been repeated on the direct port.
 
 ## The TCP findings of 2026-11-09 (first sustained TCP run 10:42, last fix 12:35)
 

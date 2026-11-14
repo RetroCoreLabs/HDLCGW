@@ -58,29 +58,36 @@ static void handle_ttyp(const char *args);
 static void handle_parity(const char *args);
 static void handle_alias(const char *args);
 
+/* Help text: "USAGE - what it does". The console core shows the part after
+ * " - " in plain HELP and the whole text in HELP <command> (commands_shared_info). */
 static const command COMMANDS[] =
 {
-    { "HELP",    "All commands",                                               handle_help },
-    { "STAT",    "Line, node and USB counters",                                handle_stat },
+    { "HELP",    "HELP - All commands",                                         handle_help },
+    { "STAT",    "STAT - Line, link, node and USB counters",                    handle_stat },
     { "NODE",    "NODE [n] - Show or store our node number (used after RESET)", handle_node },
-    { "LINK",    "LINK START|STOP - Start the link or take it down",           handle_link },
-    { "REACH",   "Ask the peer 'are you there?'; STAT shows asked / answered", handle_reach },
-    { "TERM",    "TERM CONNECT <system>|TYPE <text>|SHOW|STATUS|HANGUP - terminal session",
-      handle_term },
-    { "WIFI",    "WIFI [STATUS]|SCAN|SHOW|SSID <name>|PASS <password>|CONNECT - network",
-      handle_wifi },
-    { "TTYP",    "TTYP [n] - Terminal type for new sessions (0 default; 93 = TDV 2200)", handle_ttyp },
-    { "PARITY",  "PARITY [ON|OFF] - Even parity on typed bytes for new sessions (ON default)", handle_parity },
-    { "ALIAS",   "ALIAS [<name> <system number>|DEL <name>] - names CONNECT takes", handle_alias },
-    { "BAUD",    "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored, shared with HDLCGW)", handle_baud },
-    { "CLOCK",   "CLOCK ON|OFF - Run or stop the transmit clock",              handle_clock },
-    { "INSPECT", "INSPECT [BAD [0..3]] - Last frame, or n-th newest bad one",  handle_inspect },
-    { "LOG",     "LOG [0..5] - 0 off, 1 error, 2 warn, 3 info, 4 debug, 5 trace", handle_log },
-    { "TASK",    "List running tasks",                                         handle_task },
-    { "INFO",    "Build, chip and memory",                                     handle_info },
-    { "RESET",   "Restart the gateway",                                        handle_reset },
-    { "FIRMWARE", "FIRMWARE [SWITCH] - Show both firmware slots, or restart into HDLCGW", handle_firmware },
-    { "EXIT",    "Leave the text console, back to control frames",             handle_exit },
+    { "LINK",    "LINK START|STOP - Start the XMSG link, or take it down",      handle_link },
+    { "REACH",   "REACH - Ask the peer whether it is there; STAT shows the answer", handle_reach },
+    { "TERM",    "TERM CONNECT <system>|TYPE <text>|SHOW|STATUS|HANGUP - A terminal session "
+                 "to a SINTRAN system, from the USB console",                   handle_term },
+    { "WIFI",    "WIFI [STATUS]|SCAN|SHOW|SSID <name>|PASS <password>|CONNECT - The WiFi "
+                 "network: state, list networks, set, join",                    handle_wifi },
+    { "TTYP",    "TTYP [n] - Terminal type for new sessions (0 default, 93 = TDV 2200)", handle_ttyp },
+    { "PARITY",  "PARITY [ON|OFF] - Even parity on typed keys for new sessions (ON default)",
+      handle_parity },
+    { "ALIAS",   "ALIAS [<name> <system number>|DEL <name>] - Extra system names CONNECT knows",
+      handle_alias },
+    { "BAUD",    "BAUD <bit/s>|MAX|DEFAULT - Line speed (stored, shared with HDLCGW)", handle_baud },
+    { "CLOCK",   "CLOCK ON|OFF - Run or stop the line clock",                   handle_clock },
+    { "INSPECT", "INSPECT [BAD [0..3]] - The last frame, or one of the 4 newest bad frames, in hex",
+      handle_inspect },
+    { "LOG",     "LOG [0..5] - How much the gateway logs: 0 off, 1 errors ... 5 everything",
+      handle_log },
+    { "TASK",    "TASK - The running tasks and their free stack",               handle_task },
+    { "INFO",    "INFO - Build, chip and memory",                               handle_info },
+    { "RESET",   "RESET - Restart the gateway; every session ends",             handle_reset },
+    { "FIRMWARE", "FIRMWARE [SWITCH] - Show both firmware slots, or restart into HDLCGW",
+      handle_firmware },
+    { "EXIT",    "EXIT - Leave the text console, back to control frames",       handle_exit },
 };
 
 #define NUM_COMMANDS ((int)(sizeof(COMMANDS) / sizeof(COMMANDS[0])))
@@ -95,7 +102,7 @@ static void handle_help(const char *args)
     console_out_println("Available commands:");
     for (int i = 0; i < NUM_COMMANDS; i++)
     {
-        console_out_printf("  %s: %s\r\n", COMMANDS[i].name, COMMANDS[i].help);
+        console_out_printf("  %s\r\n", COMMANDS[i].help);   /* the help starts with the usage */
     }
 }
 

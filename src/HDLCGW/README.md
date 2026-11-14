@@ -59,7 +59,7 @@ WiFi so an emulator such as nd100x can reach a real line across the network.
 
 ## Status
 
-Version 0.2.0 (`HDLCGW_VERSION` in `console_task.h`). No tagged release.
+Version 0.3.5 (`HDLCGW_VERSION` in `console_task.h`); releases are on GitHub, see `docs/INSTALL.md`.
 
 Measured on the bench, 2026-11-09, HDLCGW wired to an RC422Dev Pico at 983000 bit/s, 60 s per run:
 

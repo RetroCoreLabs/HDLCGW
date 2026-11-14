@@ -22,7 +22,7 @@
 #include <stdbool.h>
 
 /** Firmware version, printed in the boot banner and sent in HELLO_REPLY. */
-#define XMSGGW_VERSION "0.1.1"
+#define XMSGGW_VERSION "0.3.5"
 
 /** @brief What the USB serial port is being used for. */
 typedef enum

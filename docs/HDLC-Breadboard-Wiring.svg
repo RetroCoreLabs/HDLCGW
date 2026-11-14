@@ -50,55 +50,55 @@
 <text x="214" y="810" font-size="11" text-anchor="start" fill="#555" font-weight="normal">all three boards</text>
 <rect x="440" y="80" width="380" height="770" rx="8" fill="#fbfbfb" stroke="#777" stroke-width="2"/>
 <text x="455" y="104" font-size="15" text-anchor="start" fill="#1b1b1b" font-weight="bold">Board B: four MAX485 modules</text>
-<text x="455" y="122" font-size="12" text-anchor="start" fill="#a35f00" font-weight="normal">A / B are the module&#x27;s screw terminals [A2]</text>
+<text x="455" y="122" font-size="12" text-anchor="start" fill="#a35f00" font-weight="normal">A / B = screw terminals, to the DB-25 pin shown [A2]</text>
 <rect x="470" y="130" width="320" height="150" rx="8" fill="#f2faf4" stroke="#1b8a3a" stroke-width="2"/>
 <rect x="470" y="130" width="320" height="28" rx="8" fill="#1b8a3a"/>
 <text x="482" y="149" font-size="13.5" text-anchor="start" fill="#fff" font-weight="bold">M1  TX data  (Pico to ND)</text>
 <circle cx="470" cy="190" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
 <circle cx="470" cy="240" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
 <circle cx="790" cy="190" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
-<text x="484" y="194" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A</text>
-<text x="484" y="244" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B</text>
-<text x="520" y="194" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">DE + /RE: 5 V</text>
-<text x="520" y="212" font-size="12" text-anchor="start" fill="#555" font-weight="normal">(always sending)</text>
+<text x="484" y="194" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A  to pin 23 (data +)</text>
+<text x="484" y="244" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B  to pin 10 (data -)</text>
+<text x="776" y="234" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="normal">DE + /RE: 5 V</text>
+<text x="776" y="250" font-size="12" text-anchor="end" fill="#555" font-weight="normal">(always sending)</text>
 <text x="776" y="194" font-size="13" text-anchor="end" fill="#1b1b1b" font-weight="bold">DI</text>
-<text x="520" y="244" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
+<text x="776" y="266" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
 <rect x="470" y="298" width="320" height="150" rx="8" fill="#f2faf4" stroke="#1b8a3a" stroke-width="2"/>
 <rect x="470" y="298" width="320" height="28" rx="8" fill="#1b8a3a"/>
 <text x="482" y="317" font-size="13.5" text-anchor="start" fill="#fff" font-weight="bold">M2  TX clock  (Pico to ND)</text>
 <circle cx="470" cy="358" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
 <circle cx="470" cy="408" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
 <circle cx="790" cy="358" r="7" fill="#fff" stroke="#1b8a3a" stroke-width="2"/>
-<text x="484" y="362" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A</text>
-<text x="484" y="412" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B</text>
-<text x="520" y="362" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">DE + /RE: 5 V</text>
-<text x="520" y="380" font-size="12" text-anchor="start" fill="#555" font-weight="normal">(always sending)</text>
+<text x="484" y="362" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A  to pin 21 (clock +)</text>
+<text x="484" y="412" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B  to pin 8 (clock -)</text>
+<text x="776" y="402" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="normal">DE + /RE: 5 V</text>
+<text x="776" y="418" font-size="12" text-anchor="end" fill="#555" font-weight="normal">(always sending)</text>
 <text x="776" y="362" font-size="13" text-anchor="end" fill="#1b1b1b" font-weight="bold">DI</text>
-<text x="520" y="412" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
+<text x="776" y="434" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
 <rect x="470" y="466" width="320" height="150" rx="8" fill="#f3f7fc" stroke="#1f5fbf" stroke-width="2"/>
 <rect x="470" y="466" width="320" height="28" rx="8" fill="#1f5fbf"/>
 <text x="482" y="485" font-size="13.5" text-anchor="start" fill="#fff" font-weight="bold">M3  RX data  (ND to Pico)</text>
 <circle cx="470" cy="526" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
 <circle cx="470" cy="576" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
 <circle cx="790" cy="526" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
-<text x="484" y="530" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A</text>
-<text x="484" y="580" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B</text>
-<text x="520" y="530" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">DE + /RE: GND</text>
-<text x="520" y="548" font-size="12" text-anchor="start" fill="#555" font-weight="normal">(always listening)</text>
+<text x="484" y="530" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A  to pin 25 (data +)</text>
+<text x="484" y="580" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B  to pin 12 (data -)</text>
+<text x="776" y="570" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="normal">DE + /RE: GND</text>
+<text x="776" y="586" font-size="12" text-anchor="end" fill="#555" font-weight="normal">(always listening)</text>
 <text x="776" y="530" font-size="13" text-anchor="end" fill="#1b1b1b" font-weight="bold">RO</text>
-<text x="520" y="580" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
+<text x="776" y="602" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
 <rect x="470" y="634" width="320" height="150" rx="8" fill="#f3f7fc" stroke="#1f5fbf" stroke-width="2"/>
 <rect x="470" y="634" width="320" height="28" rx="8" fill="#1f5fbf"/>
 <text x="482" y="653" font-size="13.5" text-anchor="start" fill="#fff" font-weight="bold">M4  RX clock  (ND to Pico)</text>
 <circle cx="470" cy="694" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
 <circle cx="470" cy="744" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
 <circle cx="790" cy="694" r="7" fill="#fff" stroke="#1f5fbf" stroke-width="2"/>
-<text x="484" y="698" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A</text>
-<text x="484" y="748" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B</text>
-<text x="520" y="698" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">DE + /RE: GND</text>
-<text x="520" y="716" font-size="12" text-anchor="start" fill="#555" font-weight="normal">(always listening)</text>
+<text x="484" y="698" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">A  to pin 24 (clock -)</text>
+<text x="484" y="748" font-size="13" text-anchor="start" fill="#1b1b1b" font-weight="bold">B  to pin 11 (clock +)</text>
+<text x="776" y="738" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="normal">DE + /RE: GND</text>
+<text x="776" y="754" font-size="12" text-anchor="end" fill="#555" font-weight="normal">(always listening)</text>
 <text x="776" y="698" font-size="13" text-anchor="end" fill="#1b1b1b" font-weight="bold">RO</text>
-<text x="520" y="748" font-size="12" text-anchor="start" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
+<text x="776" y="770" font-size="12" text-anchor="end" fill="#1b1b1b" font-weight="normal">VCC: 5 V    GND: GND</text>
 <path d="M463 190 C335.0 190 335.0 170 207 170" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>
 <path d="M463 240 C335.0 240 335.0 206 207 206" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>
 <path d="M463 358 C335.0 358 335.0 242 207 242" fill="none" stroke="#1b8a3a" stroke-width="2.5" marker-end="url(#aT)"/>

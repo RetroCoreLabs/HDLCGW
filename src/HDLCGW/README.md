@@ -175,7 +175,7 @@ sensitive. `HELP` prints this list on the board.
 | Command | What it does |
 |---|---|
 | `HELP [WIFI]` | All commands, or only the WiFi and TCP ones |
-| `INFO` | Build date, why the board last started (power on, crash, watchdog, a restart by the firmware...) and how long it has run, FreeRTOS and ESP-IDF versions, chip, heap and PSRAM free |
+| `INFO` | Build date, why the board last started (power on, crash, watchdog, a restart by the firmware...) and how long it has run, the chip's own reset cause (which watchdog, brownout), FreeRTOS and ESP-IDF versions, chip, heap and PSRAM free |
 | `STAT` | Frame counts sent and received, line and USB byte counters, drops, ring high water, timing |
 | `TASK` | Each FreeRTOS task: state, priority, stack high water, CPU time |
 | `BAUD <rate>\|MAX\|DEFAULT` | Set the transmit clock, 9600..983000 bit/s (default 38400). No argument shows it |

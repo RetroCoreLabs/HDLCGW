@@ -22,6 +22,7 @@
 #include <esp_partition.h>
 #include <esp_system.h>
 #include <esp_timer.h>
+#include <esp_rom_sys.h>
 #include <stdlib.h>
 
 /* The shared NVS namespace. Keys: "ssid", "pass", "rate"; "fw1"/"fw2" and
@@ -1022,6 +1023,37 @@ void board_print_restart(void (*print)(const char *text))
                    why, (int)r, (unsigned long)(s / 3600u), (unsigned long)((s / 60u) % 60u),
                    (unsigned long)(s % 60u));
     print(text);
+
+    /* The chip's own reset cause. esp_reset_reason() folds several hardware
+     * watchdogs into one "other watchdog"; this says which one. Numbers and
+     * names: RESET_REASON in esp_rom/esp32s2/include/esp32s2/rom/rtc.h
+     * (ESP-IDF in core 3.3.12). Added 2026-11-14 to find BUGS.md B1. */
+    {
+        unsigned raw = (unsigned)esp_rom_get_reset_reason(0);
+        const char *name;
+        switch (raw)
+        {
+        case 1:  name = "power on"; break;
+        case 3:  name = "software reset of the digital core"; break;
+        case 5:  name = "deep sleep"; break;
+        case 7:  name = "timer group 0 watchdog, digital core"; break;
+        case 8:  name = "timer group 1 watchdog, digital core"; break;
+        case 9:  name = "RTC watchdog, digital core"; break;
+        case 10: name = "intrusion"; break;
+        case 11: name = "timer group 0 watchdog, CPU"; break;
+        case 12: name = "software reset of the CPU"; break;
+        case 13: name = "RTC watchdog, CPU"; break;
+        case 15: name = "supply voltage not stable (brownout)"; break;
+        case 16: name = "RTC watchdog, whole chip"; break;
+        case 17: name = "timer group 1 watchdog, CPU"; break;
+        case 18: name = "super watchdog, whole chip"; break;
+        case 19: name = "clock glitch, whole chip"; break;
+        case 20: name = "eFuse error"; break;
+        default: name = "not listed"; break;
+        }
+        (void)snprintf(text, sizeof text, "Chip reset cause: %u, %s\r\n", raw, name);
+        print(text);
+    }
 }
 
 bool board_ask_active(void)

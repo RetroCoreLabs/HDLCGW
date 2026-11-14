@@ -45,6 +45,15 @@ static const board_ask_ops ASK_OPS = {
 };
 
 console_mode g_console_mode = CONSOLE_FORWARDING;
+
+bool console_task_wifi_setup(void)
+{
+    if (g_console_mode != CONSOLE_DEBUG)
+    {
+        return false;   /* questions need the text console to type the answers */
+    }
+    return board_ask_wifi(&ASK_OPS);
+}
 console_frame_stats g_sent_stats;
 console_frame_stats g_received_stats;
 
@@ -721,7 +730,7 @@ static void handle_debug_input(char c)
             commands_process(g_input);
             g_input_pos = 0;
         }
-        if (g_console_mode == CONSOLE_DEBUG)
+        if (g_console_mode == CONSOLE_DEBUG && !board_ask_active())   /* no prompt under a question */
         {
             console_task_show_prompt();
         }

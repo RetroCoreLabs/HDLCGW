@@ -205,9 +205,10 @@ name and passphrase are shared with XMSGGW: set them in either firmware. `BAUD` 
 | Command | What it does |
 |---|---|
 | `WIFI` or `WIFI STATUS` | Connection state, SSID, IP address, signal, host name, last disconnect reason; then the TCP mode and MIRROR |
-| `WIFI SCAN` | List the networks the board can see, about 3 s, 2.4 GHz only |
+| `WIFI SCAN` | List the networks the board can see, a few seconds, 2.4 GHz only. If the board is busy joining a network, that attempt is stopped so the scan can run; it joins again by itself |
+| `WIFI SETUP` | Scan, pick a network by its number, type its password; stored and joined. Text console only (it asks questions) |
 | `WIFI SHOW` | Show the stored network name and password (USB console only: commands do not run over TCP) |
-| `WIFI SSID <name>` | Store the network name (up to 32 characters, spaces allowed) |
+| `WIFI SSID <name>` | Store the network name (up to 32 characters; spaces inside are kept, spaces at the ends are dropped) |
 | `WIFI PASS <pass>` | Store the passphrase (up to 64; empty for an open network) |
 | `WIFI ON` | Turn WiFi on: connect now and after every reset |
 | `WIFI OFF` | Turn WiFi off: radio down, frames stay on USB |
@@ -222,8 +223,8 @@ name and passphrase are shared with XMSGGW: set them in either firmware. `BAUD` 
 **First-time setup**, no network configured yet. Opening the text console (ESC ESC ESC) asks by
 itself: it lists the networks it can see, takes a number from that list or a name, then the
 password (shown as `*`), stores both and turns WiFi on. `NONE` means this board runs without WiFi
-and stops the question (until `WIFI SSID` or `WIFI CLEAR`); Enter skips it this time. Then
-`TCP SERVER`. The same by hand:
+and stops the question (until `WIFI SETUP`, `WIFI SSID` or `WIFI CLEAR`); Enter skips it this
+time. `WIFI SETUP` asks the same questions at any time. Then `TCP SERVER`. The same by hand:
 
 ```
 WIFI SCAN

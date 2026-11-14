@@ -93,7 +93,7 @@ static const command COMMANDS[] =
     { "PACKETGEN", "Switch to packet generation mode",                       handle_packet_gen },
     { "CLOCK",     "CLOCK ON|OFF - Run or stop the transmit clock (HDLCGW)",  handle_clock },
     { "RXDMA",     "Dump the receive DMA ring (HDLCGW)",                      handle_rxdma },
-    { "WIFI",      "WIFI SSID <n>|PASS <p>|ON|OFF|CONNECT|STATUS|SCAN|SHOW|CLEAR",   handle_wifi },
+    { "WIFI",      "WIFI SSID <n>|PASS <p>|ON|OFF|CONNECT|STATUS|SCAN|SETUP|SHOW|CLEAR", handle_wifi },
     { "TCP",       "TCP SERVER [port]|CLIENT <host> <port>|OFF (frames over TCP)", handle_tcp },
     { "MIRROR",    "MIRROR ON|OFF - Line frames to USB too while a TCP peer is on", handle_mirror },
     { "LOG",       "LOG [0..5] - 0 off, 1 error, 2 warn, 3 info, 4 debug, 5 trace", handle_log },
@@ -116,11 +116,13 @@ static void print_wifi_help(void)
         "  WIFI or WIFI STATUS  - State, SSID, IP, signal, host name, last disconnect reason,");
     console_out_println("                         then the TCP mode and MIRROR");
     console_out_println(
-        "  WIFI SCAN            - List the networks the board can see (about 3 s; 2.4 GHz only)");
+        "  WIFI SCAN            - List the networks the board can see (a few s; 2.4 GHz only)");
+    console_out_println(
+        "  WIFI SETUP           - Scan, pick a network by number, type its password");
     console_out_println(
         "  WIFI SHOW            - Show the stored network name and password (USB console only)");
     console_out_println(
-        "  WIFI SSID <name>     - Store the network name (up to 32 characters, spaces allowed)");
+        "  WIFI SSID <name>     - Store the network name (up to 32; spaces at the ends dropped)");
     console_out_println(
         "  WIFI PASS <pass>     - Store the passphrase (up to 64; empty for an open network)");
     console_out_println("  WIFI ON              - Turn WiFi on: connect now and after every reset");
@@ -771,6 +773,14 @@ static void handle_wifi(const char *args)
     {
         wifi_task_scan();
     }
+    else if (strcasecmp(word, "SETUP") == 0)
+    {
+        if (!console_task_wifi_setup())
+        {
+            console_out_println("WIFI SETUP asks questions: open the text console (ESC ESC ESC) "
+                                "and type it there.");
+        }
+    }
     else if (strcasecmp(word, "SHOW") == 0)
     {
         wifi_task_show();
@@ -778,7 +788,7 @@ static void handle_wifi(const char *args)
     else
     {
         console_out_println("Use WIFI SSID <name>, PASS <passphrase>, ON, OFF, CONNECT, STATUS, "
-                            "SCAN, SHOW or CLEAR.");
+                            "SCAN, SETUP, SHOW or CLEAR.");
     }
 }
 

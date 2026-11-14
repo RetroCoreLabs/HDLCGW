@@ -49,6 +49,15 @@ static const board_ask_ops ASK_OPS = {
 
 console_mode g_console_mode = CONSOLE_FORWARDING;
 
+bool console_task_wifi_setup(void)
+{
+    if (g_console_mode != CONSOLE_DEBUG)
+    {
+        return false;   /* questions need the text console to type the answers */
+    }
+    return board_ask_wifi(&ASK_OPS);
+}
+
 /* Set from the USB CDC event callback (ESP event task) when the host drops
  * DTR or pulls the cable; the console loop acts on it. */
 static volatile bool g_host_lost = false;

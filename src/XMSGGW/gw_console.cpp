@@ -88,6 +88,10 @@ static uint32_t s_now = 0;
 /* The USB text console as one more place (console_task.h): logged in as admin,
  * no password - whoever holds the cable owns the board. */
 static ConsoleSession *s_usb = NULL;
+/* A USB command that left a question open (WIFI SETUP, ../common/board.h): its
+ * prompt is held back until the question is answered, so "XMSG# " never sits
+ * under "Network: " (Ronny, 2026-11-14). */
+static ConsoleSession *s_ask_wait = NULL;
 static size_t s_job_off = 0;      /* bytes of the finished command's text already printed */
 
 /* The application's commands for HELP, HELP <command> and TAB (libxmsg
@@ -685,10 +689,19 @@ static void usb_pass(uint32_t now)
     uint8_t buf[64];
     int n;
 
+    if (s_ask_wait != NULL && (s_ask_wait != s_usb || !board_ask_active()))
+    {
+        if (s_ask_wait == s_usb)
+        {
+            console_command_done(s_ask_wait);   /* the question is answered: prompt back */
+        }
+        s_ask_wait = NULL;
+    }
     if (console_task_usb_take_lost() && s_usb != NULL)
     {
         ConsoleSession *s = s_usb;
         s_usb = NULL;
+        s_ask_wait = NULL;
         console_line_lost(s);   /* hangs up any onward session */
     }
     if (console_task_usb_take_open() && s_usb == NULL)
@@ -752,7 +765,14 @@ static void job_pass(void)
     {
         s_job_off = 0;
         console_task_job_release();
-        console_command_done(s);
+        if (board_ask_active() && s == s_usb)
+        {
+            s_ask_wait = s;   /* usb_pass gives the prompt back when it is answered */
+        }
+        else
+        {
+            console_command_done(s);
+        }
     }
     /* else the line is full: the rest goes on a later pass */
 }

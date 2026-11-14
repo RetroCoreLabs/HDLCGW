@@ -199,6 +199,19 @@ bool board_ask_start(const board_ask_ops *ops);
 /** @brief Whether a question is waiting: the next line typed is its answer. */
 bool board_ask_active(void);
 
+/**
+ * @brief WIFI SETUP: ask for the WiFi network now, stored one or not.
+ *
+ * Scans, lists the networks by number, asks for a number (or a name, SCAN,
+ * NONE, or Enter to keep what is stored), then for the password. Answers come
+ * through board_ask_answer() like the questions at console start
+ * (Ronny, 2026-11-14: "a wifi command that can be executed at any time").
+ *
+ * @param[in] ops  The same callbacks as board_ask_start(); must stay valid.
+ * @return true when the question is now open; false when ops is unusable.
+ */
+bool board_ask_wifi(const board_ask_ops *ops);
+
 /** @brief Whether the waiting answer is a password: echo '*' instead of the letters. */
 bool board_ask_hidden(void);
 
@@ -208,6 +221,20 @@ bool board_ask_hidden(void);
  * @param[in] line  The line, without CR LF.
  */
 void board_ask_answer(const char *line);
+
+/**
+ * @brief Copy a network name without the spaces and tabs at its two ends.
+ *
+ * A name typed with a space after it ("HackerCorp ") is a different network,
+ * one that does not exist, and the board then tries to join it for ever
+ * (bench 2026-11-14). Every place that stores a name goes through this.
+ *
+ * @param[in]  in   The name as typed.
+ * @param[out] out  Receives the trimmed name, NUL terminated.
+ * @param[in]  cap  Size of out; BOARD_SSID_SIZE.
+ * @return Length of the trimmed name, or -1 when it is empty or longer than cap - 1.
+ */
+int board_trim_ssid(const char *in, char *out, size_t cap);
 
 /**
  * @brief A whole line of digits as a node number.

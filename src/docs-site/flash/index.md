@@ -17,6 +17,8 @@ stored, blinks slowly while it tries to join, and stays on once it has joined.
 
 Put the board in **download mode** first: hold the **0** button, press and let go of **RST**,
 then let go of **0**. When the browser is done, press **RST** to start the firmware.
+A brand-new board often shows no serial port at all until it is in download mode, so do this
+first even if the browser lists nothing.
 
 The slots, the settings and what erases them are on the
 [install page](../docs/INSTALL.md).

@@ -20,7 +20,7 @@ PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by
 
 ## B1 - a second S2 Mini (COM20) drops off USB under traffic
 
-Open, 2026-11-14. Points to board B's supply (see the end of this entry); not proven.
+Open, 2026-11-14. Cause not found; the supply-dip idea was measured and ruled out (see the end of this entry).
 
 Setup: two LOLIN S2 Minis with the same build (HDLCGW 0.3.5, built 18:07:00 that day), both on
 WiFi, joined over TCP with WIRELESS ON (the TCP peer replaces the cable), PC test tool
@@ -62,11 +62,18 @@ were changed together, so which of the two mattered is not known):
 - The esp-idf "hint" of what started a restart cannot be read by the firmware: it is 0 even
   right after a RESET command, so the system start clears it first.
 
-What this points to, not measured directly: when board B's WiFi sends at full power, its supply
-dips. The dip trips the low-voltage detector, and the restart that starts does not finish, so
-the RTC watchdog ends it (cause 16). With the detector off, the same dip upsets USB. Board A,
-same firmware, never does this. No voltage has been measured; that needs an oscilloscope on the
-board's 3V3 pin during traffic, or board B on another supply.
+2026-11-15, measured on the boards themselves: a test build kept the brownout detector on but
+stopped it from resetting or interrupting, and counted two things every millisecond, the
+detector's latched flag and its live output. Two 60 s runs, board B failed on USB within the
+first seconds both times; counts on both boards: 0 and 0. So the supply did NOT drop below the
+detector's level (level 7) in a way a 1 ms sample sees. The supply-dip explanation written here
+on 2026-11-14 is withdrawn.
+
+What is left, all measured: board B's USB fails only with WiFi traffic at full send power (not
+at 8.5 dBm), the board itself keeps running, and only the PC-to-board direction fails, at the
+PC (Windows error 31, "device not functioning"). One explanation that fits, NOT measured: the
+WiFi transmitter on this board disturbs its USB signal, so the PC sees bad USB packets. How the
+restart (RTC watchdog, cause 16) with the normal firmware follows from that is not known.
 
 Does not fit yet: the failure seen with WIRELESS OFF (above) was before the change of hub and
 cable, and has not been repeated on the direct port.

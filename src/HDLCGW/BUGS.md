@@ -20,7 +20,7 @@ PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by
 
 ## B1 - a second S2 Mini (COM20) drops off USB under traffic
 
-Open, 2026-11-14. Cause not found; the supply-dip idea was measured and ruled out (see the end of this entry).
+Open, 2026-11-14. Cause: these boards' WiFi transmitter breaks USB from the PC (measured A/B, see the end of this entry). Open until a good v1.0 board is tested.
 
 Setup: two LOLIN S2 Minis with the same build (HDLCGW 0.3.5, built 18:07:00 that day), both on
 WiFi, joined over TCP with WIRELESS ON (the TCP peer replaces the cable), PC test tool
@@ -74,6 +74,26 @@ at 8.5 dBm), the board itself keeps running, and only the PC-to-board direction 
 PC (Windows error 31, "device not functioning"). One explanation that fits, NOT measured: the
 WiFi transmitter on this board disturbs its USB signal, so the PC sees bad USB packets. How the
 restart (RTC watchdog, cause 16) with the normal firmware follows from that is not known.
+
+2026-11-15, later: Ronny replaced board B with a brand-new S2 Mini (also bought from
+AliExpress, chip revision v1.0 = "rev 100", the same as board B). It fails the same way on the
+same test.
+
+- The two revisions do run one thing differently: Espressif's errata (USB-105) has ESP-IDF set
+  the USB unit to "INCR" bus bursts on v0.0 only. Read from the boards: GAHBCFG 0x00000001
+  (single transfers, no DMA), GUSBCFG 0x40001447 on both; TinyUSB in this core does not use
+  USB DMA. So that difference does not reach this firmware; ruled out.
+- Reduced to the smallest case, no TCP, no line, no forwarding (WIRELESS OFF, TCP OFF): the PC
+  writes frames to USB while 20 pings of 1400 bytes run against the board's WiFi address.
+  Good board (rev 0): 800 of 800 pings answered, 40 s, no USB error. New board (rev 100):
+  "device not functioning" within seconds. The same USB writes with no pings: no error.
+
+Cause, as far as the bench can go: on these v1.0 boards, the board's own WiFi transmitter
+breaks USB packets from the PC. It is the board, not the firmware: the same build, the same
+test and the same load pass on the other board. Not measured: whether it is the board layout
+or the chip; a genuine LOLIN S2 Mini with a v1.0 chip would settle it. Lowering the WiFi send
+power hides it but is not a fix (rule: no workarounds). Open until a board that does not do
+this is tested.
 
 Does not fit yet: the failure seen with WIRELESS OFF (above) was before the change of hub and
 cable, and has not been repeated on the direct port.

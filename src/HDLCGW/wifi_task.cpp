@@ -107,6 +107,8 @@ static volatile bool g_peer_connected = false;   /* read by console_task */
 static NetworkServer g_server;
 static NetworkClient g_peer;
 static byte_frame_decoder g_peer_decoder;
+/* Its buffer, BYTE_FRAME_MAX bytes from wifi_task_init() (PSRAM first). */
+static uint8_t *g_peer_decoder_buf = NULL;
 
 /* Peer I/O state kept between passes (run_peer_io). Bytes read from the
  * socket and not yet fed to the decoder; a decoded frame waiting for room on
@@ -250,7 +252,13 @@ void wifi_task_init(void)
     g_cfg_mutex = xSemaphoreCreateMutex();
     load_settings();
     memset(&g_stats, 0, sizeof(g_stats));
-    byte_frame_decoder_reset(&g_peer_decoder);
+    g_peer_decoder_buf = (uint8_t *)heap_caps_malloc(BYTE_FRAME_MAX, MALLOC_CAP_SPIRAM);
+    if (g_peer_decoder_buf == NULL)
+    {
+        g_peer_decoder_buf = (uint8_t *)malloc(BYTE_FRAME_MAX);
+    }
+    /* -1 only for a NULL buffer: then every byte is counted in no_buffer. */
+    (void)byte_frame_decoder_init(&g_peer_decoder, g_peer_decoder_buf, BYTE_FRAME_MAX);
 
     /* Internal heap, not static (dram0_0_seg is full) and not PSRAM (hot
      * path, see RING_SIZE). Without it TCP output is simply off. */
@@ -405,6 +413,7 @@ void wifi_task_get_stats(wifi_task_stats *out)
 {
     *out = g_stats;
     out->overlong_from_peer = g_peer_decoder.overlong;
+    out->no_buffer_from_peer = g_peer_decoder.no_buffer;
     out->ring_high_water = g_ring_ok ? (uint32_t)ring_buffer_high_water(&g_tcp_tx_buffer) : 0u;
     out->ring_size = g_ring_ok ? (uint32_t)ring_buffer_size(&g_tcp_tx_buffer) : 0u;
 }

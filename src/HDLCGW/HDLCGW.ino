@@ -89,7 +89,20 @@ void setup(void)
     Serial.println("HDLC GW version " HDLCGW_VERSION);
 
     line_log_set_error(line_error_early);
-    spi_tx_task_init();
+    /* Transmit ring for frames up to BYTE_FRAME_MAX (4112, libxmsg f83e467):
+     * a 4105-byte frame of 0xFF is 4926 bytes after bit stuffing, so 8192
+     * holds one frame going out and the next one queued. Internal RAM is the
+     * hot-path rule; PSRAM only if internal RAM has no room (not measured at
+     * 307200 bit/s), then the old 4096-byte internal ring. */
+    if (spi_tx_task_init_ring(8192, SPI_TX_RING_INTERNAL) != 0)
+    {
+        Serial.println("Transmit ring: no 8192 bytes of internal RAM, trying PSRAM");
+        if (spi_tx_task_init_ring(8192, SPI_TX_RING_PSRAM) != 0)
+        {
+            Serial.println("Transmit ring: no PSRAM either, 4096 internal");
+            spi_tx_task_init();
+        }
+    }
     spi_rx_task_init();
     /* The line rate both firmwares share (BAUD stores it); none stored keeps
      * the transmit task's own start-up rate. */

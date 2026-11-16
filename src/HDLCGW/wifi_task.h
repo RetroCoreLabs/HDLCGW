@@ -56,6 +56,8 @@ typedef struct
     uint32_t dropped_to_peer;   /**< line frames dropped because the TCP ring was full */
     uint32_t peer_connects;     /**< TCP connections accepted or made */
     uint32_t wifi_connects;     /**< times the station got an IP */
+    uint32_t no_buffer_from_peer; /**< peer bytes dropped because the decoder got no
+                                       buffer at start-up (out of memory) */
     uint32_t overlong_from_peer; /**< peer frames dropped for being longer than
                                       BYTE_FRAME_MAX */
     uint32_t send_full;         /**< sends the socket refused because its buffer was full

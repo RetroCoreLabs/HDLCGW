@@ -604,7 +604,15 @@ void console_task_run(void *params)
 {
     (void)params;
 
-    byte_frame_decoder_reset(&g_host_decoder);
+    /* libxmsg f83e467: the decoder's buffer comes from the caller. PSRAM
+     * first (control frames only, not the line), internal heap as fallback;
+     * NULL makes the decoder count every byte in no_buffer and keep none. */
+    uint8_t *host_buf = (uint8_t *)heap_caps_malloc(BYTE_FRAME_MAX, MALLOC_CAP_SPIRAM);
+    if (host_buf == NULL)
+    {
+        host_buf = (uint8_t *)malloc(BYTE_FRAME_MAX);
+    }
+    (void)byte_frame_decoder_init(&g_host_decoder, host_buf, BYTE_FRAME_MAX);
     g_usb_typed = xStreamBufferCreate(USB_TYPED_MAX, 1);
     g_job_text = (char *)heap_caps_calloc(1, JOB_TEXT_MAX, MALLOC_CAP_SPIRAM);
 

@@ -86,7 +86,8 @@ static uint32_t g_last_stat_push_ms = 0;
  */
 typedef struct
 {
-    uint8_t frame[BYTE_FRAME_MAX];  /**< bytes so far, FCS included at the end */
+    uint8_t *frame;                 /**< BYTE_FRAME_MAX bytes from console_task_init(),
+                                         internal RAM (line hot path); FCS at the end */
     int len;                        /**< bytes delivered; may exceed the array */
 } line_frame;
 
@@ -94,7 +95,9 @@ static line_frame g_line_frame;
 static hdlc_decoder g_line_decoder;
 
 /* Copy of the last complete frame off the line, for INSPECT. */
-static uint8_t g_last_frame[BYTE_FRAME_MAX];
+/* BYTE_FRAME_MAX bytes, PSRAM, from console_task_init(): since libxmsg f83e467
+ * BYTE_FRAME_MAX is 4112 and a static copy no longer fits dram0_0_seg. */
+static uint8_t *g_last_frame = NULL;
 static int g_last_len = 0;
 static bool g_last_crc_good = false;
 
@@ -137,7 +140,7 @@ static HOT_PATH_CODE void on_line_byte(void *ctx, uint8_t data)
 {
     line_frame *lf = (line_frame *)ctx;
 
-    if (lf->len < BYTE_FRAME_MAX)
+    if (lf->frame != NULL && lf->len < BYTE_FRAME_MAX)
     {
         lf->frame[lf->len] = data;
     }
@@ -155,7 +158,7 @@ static void on_line_end(void *ctx, hdlc_rx_status status)
 {
     line_frame *lf = (line_frame *)ctx;
     bool crc_good = (status == HDLC_RX_OK);
-    bool fits = lf->len <= BYTE_FRAME_MAX;
+    bool fits = (lf->frame != NULL) && (g_last_frame != NULL) && (lf->len <= BYTE_FRAME_MAX);
 
     g_received_stats.total_frames++;
 
@@ -371,10 +374,20 @@ uint32_t console_task_usb_rx_bytes(void)
 /* ------------------------------------------------------ host -> line */
 
 static byte_frame_decoder g_host_decoder;
+/* The host decoder's buffer (libxmsg f83e467 takes it from the caller). */
+static uint8_t *g_host_decoder_buf = NULL;
+/* The shared line encode buffer, 2 + 2 * BYTE_FRAME_MAX + 2 bytes, internal
+ * RAM (hot path), from console_task_init(). */
+static uint8_t *g_line_encode_buf = NULL;
 
 uint32_t console_task_host_overlong(void)
 {
     return g_host_decoder.overlong;
+}
+
+uint32_t console_task_host_no_buffer(void)
+{
+    return g_host_decoder.no_buffer;
 }
 static int g_esc_count = 0;     /* ESC presses in a row while idle, 3 = DEBUG */
 
@@ -436,6 +449,26 @@ void console_task_init(void)
     {
         g_bad_frames = (uint8_t *)malloc(BAD_HISTORY * BYTE_FRAME_MAX);
     }
+    /* Line side, hot path: internal RAM only. NULL leaves the line closed
+     * both ways (frames are counted as bad), which STAT shows. */
+    g_line_frame.frame = (uint8_t *)heap_caps_malloc(BYTE_FRAME_MAX,
+                                                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    g_line_encode_buf = (uint8_t *)heap_caps_malloc(2 + 2 * BYTE_FRAME_MAX + 2,
+                                                    MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    /* Copies and the USB side: PSRAM first, internal heap as fallback. */
+    g_last_frame = (uint8_t *)heap_caps_malloc(BYTE_FRAME_MAX, MALLOC_CAP_SPIRAM);
+    if (g_last_frame == NULL)
+    {
+        g_last_frame = (uint8_t *)malloc(BYTE_FRAME_MAX);
+    }
+    g_host_decoder_buf = (uint8_t *)heap_caps_malloc(BYTE_FRAME_MAX, MALLOC_CAP_SPIRAM);
+    if (g_host_decoder_buf == NULL)
+    {
+        g_host_decoder_buf = (uint8_t *)malloc(BYTE_FRAME_MAX);
+    }
+    /* -1 only for a NULL buffer; the decoder then counts every byte in
+     * no_buffer and keeps none, which STAT shows. */
+    (void)byte_frame_decoder_init(&g_host_decoder, g_host_decoder_buf, BYTE_FRAME_MAX);
 }
 
 void console_task_send_line_frame(const uint8_t *frame, int len)
@@ -444,9 +477,16 @@ void console_task_send_line_frame(const uint8_t *frame, int len)
      * returns at most 2 bytes per input byte, plus the opening and closing
      * flag and one idle byte. Shared by the two sending tasks under
      * g_line_mutex. */
-    static uint8_t line[2 + 2 * BYTE_FRAME_MAX + 2];
+    uint8_t *line = g_line_encode_buf;
     hdlc_encoder enc;
     int n = 0;
+
+    if (line == NULL)
+    {
+        g_sent_stats.total_frames++;
+        g_sent_stats.bad_frames++;
+        return;
+    }
 
     if (g_line_mutex != NULL)
     {

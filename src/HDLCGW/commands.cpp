@@ -1005,6 +1005,9 @@ static void handle_stat(const char *args)
     console_out_printf("Too long (over %d bytes), dropped: %u from USB, %u from TCP\r\n",
                        BYTE_FRAME_MAX, (unsigned)console_task_host_overlong(),
                        (unsigned)wf.overlong_from_peer);
+    console_out_printf("No decoder buffer (out of memory at start-up), bytes dropped: "
+                       "%u from USB, %u from TCP\r\n",
+                       (unsigned)console_task_host_no_buffer(), (unsigned)wf.no_buffer_from_peer);
     console_out_printf("Time (us, wraps): USB write %u for %u bytes, host input %u, "
                        "line drain %u\r\n",
                        (unsigned)usb_tx_task_write_us(), (unsigned)usb_tx_task_written_bytes(),

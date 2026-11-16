@@ -44,8 +44,12 @@
  * 16 KB in PSRAM; internal RAM cannot spare 16 KB (15.7 KB was the lowest
  * free during the first TCP run), and with the socket written without
  * blocking (run_peer_io) the ring only has to cover the PC's ACK delays on
- * top of lwIP's own 5.7 KB send buffer. 4 KB is about 33 ms at 983000. */
-#define RING_SIZE          4096
+ * top of lwIP's own 5.7 KB send buffer. 4 KB is about 33 ms at 983000.
+ *
+ * 2026-11-16: 16 KB in PSRAM again (Ronny chose this over the hot-path rule):
+ * a frame of up to 4105 bytes (libxmsg f83e467) needs up to 2 * 4112 + 2
+ * bytes here after escaping, and internal RAM had 3.9 KB free. */
+#define RING_SIZE          16384
 #define LOOP_MS            10       /* pass interval with nothing to move */
 #define BUSY_LOOP_MS       1        /* pass interval while bytes wait either way */
 /* With bytes waiting to go to the peer and none accepted by the socket for
@@ -260,9 +264,9 @@ void wifi_task_init(void)
     /* -1 only for a NULL buffer: then every byte is counted in no_buffer. */
     (void)byte_frame_decoder_init(&g_peer_decoder, g_peer_decoder_buf, BYTE_FRAME_MAX);
 
-    /* Internal heap, not static (dram0_0_seg is full) and not PSRAM (hot
-     * path, see RING_SIZE). Without it TCP output is simply off. */
-    g_ring_ok = ring_buffer_alloc_internal(&g_tcp_tx_buffer, RING_SIZE);
+    /* PSRAM when the board has it (see RING_SIZE), internal heap otherwise.
+     * Without it TCP output is simply off. */
+    g_ring_ok = ring_buffer_alloc(&g_tcp_tx_buffer, RING_SIZE);
     g_in_buf = (uint8_t *)heap_caps_malloc(TCP_READ_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     g_out_buf = (uint8_t *)heap_caps_malloc(TCP_WRITE_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (g_in_buf == NULL || g_out_buf == NULL)

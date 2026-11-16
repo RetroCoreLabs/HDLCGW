@@ -21,8 +21,14 @@
  * at a full ring): 8 KB filled as well, because the cause was CPU, not ring
  * size. After the line TX chunks were sized by rate (spi_tx_task.cpp) the
  * same runs lost nothing and this ring's high water was 1322 bytes, so it is
- * 4 KB again and the internal heap keeps the other 4 KB. */
-#define BUFFER_SIZE 4096
+ * 4 KB again and the internal heap keeps the other 4 KB.
+ *
+ * 2026-11-16: 16 KB in PSRAM (Ronny chose this over the hot-path rule). With
+ * frames up to 4105 bytes (libxmsg f83e467) one frame needs up to
+ * 2 * 4112 + 2 bytes here after escaping, and a 4 KB ring dropped every
+ * 4103-byte frame (STAT "host slower than line"); internal RAM had 3.9 KB
+ * free. 16 KB holds one big frame going out and the next one queued. */
+#define BUFFER_SIZE 16384
 
 /* CONFIG_TINYUSB_CDC_TX_BUFSIZE is 64 in the core's build; writing more per
  * call only makes USBCDC::write loop internally. */
@@ -48,9 +54,10 @@ static volatile uint32_t g_host_closed_flushes = 0;
 
 void usb_tx_task_init(void)
 {
-    if (!ring_buffer_alloc_internal(&g_usb_tx_buffer, BUFFER_SIZE))
+    /* PSRAM when the board has it, internal heap otherwise (ring_buffer_alloc). */
+    if (!ring_buffer_alloc(&g_usb_tx_buffer, BUFFER_SIZE))
     {
-        Serial.println("usb_tx_task: no internal RAM for the USB ring");
+        Serial.println("usb_tx_task: no memory for the USB ring");
         while (true)
         {
             vTaskDelay(pdMS_TO_TICKS(1000));

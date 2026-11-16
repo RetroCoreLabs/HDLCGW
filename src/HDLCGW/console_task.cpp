@@ -524,8 +524,10 @@ static void handle_control_hello(const control_frame *cf)
     uint8_t payload[1 + sizeof(text)];
     int n;
 
-    /* A fresh host session starts quiet. */
+    /* A fresh host session starts quiet, but it has asked for control
+     * frames, so events go to it from now on. */
     console_out_host_reset();
+    console_out_host_hello();
 
     n = snprintf(text, sizeof(text),
                  "name=HDLCGW\nversion=%s\nbuild=%s %s\nmaxframe=%d\n"

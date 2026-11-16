@@ -22,6 +22,14 @@
 uint8_t g_console_out_log_level = CONTROL_FRAME_LOG_OFF;
 uint16_t g_console_out_stat_period_ms = 0;
 
+/* True once the program on the USB port has sent HELLO, cleared when it
+ * closes the port. Until then no EVENT frame is sent. A plain program
+ * (RetroCore, nd100x) takes every flagged frame on the port as line
+ * traffic: a "line receive idle" event, a complete 0x7E-flagged frame to
+ * address 0xFE, reached SINTRAN on D102 as an HDLC frame and its link went
+ * silent (bench 2026-11-16, D102 line trace). Ronny chose this fix. */
+static volatile bool g_host_said_hello = false;
+
 /* The reply being collected. Only console_task writes replies (commands run
  * there), so one set of state is enough. */
 static bool g_in_reply = false;
@@ -47,6 +55,7 @@ void console_out_init(void)
 {
     g_console_out_log_level = CONTROL_FRAME_LOG_OFF;
     g_console_out_stat_period_ms = 0;
+    g_host_said_hello = false;
     g_in_reply = false;
     g_chunk_len = 0;
     memset(&g_stats, 0, sizeof(g_stats));
@@ -276,6 +285,10 @@ void console_out_event(uint8_t code, const char *text)
         Serial.printf("[event %u] %s\r\n", (unsigned)code, text);
         return;
     }
+    if (!g_host_said_hello)
+    {
+        return;   /* nobody on the port asked for control frames: line frames only */
+    }
 
     uint8_t payload[1 + 200];
     int n = (int)strlen(text);
@@ -415,6 +428,12 @@ void console_out_host_reset(void)
 {
     g_console_out_log_level = CONTROL_FRAME_LOG_OFF;
     g_console_out_stat_period_ms = 0;
+    g_host_said_hello = false;
+}
+
+void console_out_host_hello(void)
+{
+    g_host_said_hello = true;
 }
 
 void console_out_get_stats(console_out_stats *out)

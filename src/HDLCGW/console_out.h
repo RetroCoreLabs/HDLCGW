@@ -22,9 +22,10 @@
 ** Log lines are separate from replies: console_out_log() prints them   **
 ** in DEBUG mode and sends them as LOG frames in FORWARDING, but only    **
 ** when the host has turned logging on (default OFF, Ronny 2026-11-08). **
-** EVENT and STAT frames follow the same gate for push, except events    **
-** which are always sent (they are rare and the host asked for frames    **
-** by sending HELLO). Nothing here blocks: a frame that does not fit in  **
+** STAT push follows the same gate. EVENT frames go out only after the   **
+** program on the port has sent HELLO, until it closes the port: a       **
+** program that never says HELLO (RetroCore, nd100x) takes every frame   **
+** as line traffic. Nothing here blocks: a frame that does not fit in    **
 ** the USB ring is dropped and counted, like a data frame.               **
 **                                                                       **
 ** Ronny Hansen                                                          **
@@ -146,6 +147,13 @@ void console_out_flush(void);
  *        when the USB host goes away or sends HELLO.
  */
 void console_out_host_reset(void);
+
+/**
+ * @brief The program on the USB port sent HELLO: EVENT frames go to it from
+ *        now until it closes the port (console_out_host_reset() clears it).
+ *        A program that never sends HELLO gets line frames only.
+ */
+void console_out_host_hello(void);
 
 /** @brief Counters for STAT. */
 typedef struct

@@ -154,7 +154,7 @@ uint32_t console_task_usb_rx_bytes(void);
 
 /**
  * @brief Frames from the host over USB dropped for being longer than
- *        BYTE_FRAME_MAX (1024 bytes after un-stuffing, FCS included).
+ *        BYTE_FRAME_MAX (4112 bytes after un-stuffing, FCS included).
  * @return Count since boot.
  */
 uint32_t console_task_host_overlong(void);

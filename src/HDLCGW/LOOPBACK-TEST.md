@@ -220,7 +220,7 @@ hdlc-loopback --port COM10 --rates 9600,38400,983000 --seconds 10
 |---|---|---|
 | `--rates` | 9600,19200,38400,115200,307200,983000 | transmit clock rates, one run each |
 | `--seconds` | 120 | traffic time per rate |
-| `--size` | 126 | frame length including FCS; 10..1024 (RC422Dev takes at most 128) |
+| `--size` | 126 | frame length including FCS; 10..4112; both gateways take up to 4105 (HELLO maxframe), longer tests that they refuse it |
 | `--window` | 3000 | encoded bytes in flight per direction |
 | `--timeout` | 5 | seconds before an unseen frame is counted lost |
 | `--no-baud` | | skip the console BAUD step |
@@ -287,8 +287,9 @@ Facts about the two ends that matter here (from both firmwares' source):
   Pico's transmit clock idles high and stops between frames. HDLCGW's receiver samples on the
   rising edge and is clocked only by edges, so a stopped clock is fine; the Pico's receiver is
   the same.
-- The Pico's frame limit is 128 bytes including FCS, so use `--size 126` or less. HDLCGW takes
-  1024.
+- Frame limit, FCS included: both boards take up to 4105 bytes since libxmsg f83e467
+  (2026-11-16; before that the Pico took 128 and HDLCGW 1024). The Pico refuses 4106 and over;
+  HDLCGW forwards a frame from USB up to 4112 bytes and drops anything longer.
 - **A stopped clock leaves the tail of a frame in the ESP's SPI hardware.** Measured
   2026-11-08 with the `RXDMA` dump: the SPI DMA writes received data to memory in 4-byte words,
   holds the most recent complete word until one more byte arrives, and never writes a partial

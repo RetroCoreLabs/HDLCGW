@@ -298,6 +298,8 @@ HDLC (ISO 13239) and IBM's SDLC send frames between 0x7E flags on a clocked line
 a 0 is inserted after five 1 bits so data can never look like a flag, and a 16-bit checksum (FCS)
 closes the frame. Bits go least significant first. The PC side of this gateway uses RFC 1662
 byte stuffing instead, which is how PPP frames travel over an ordinary serial port.
+Where HDLC came from, and how it differs from LAPB and PPP:
+[History of HDLC](../../docs/HDLC-History.md).
 
 ## Documentation
 

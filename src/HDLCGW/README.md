@@ -27,6 +27,7 @@ and speaks the same host protocol, so the same PC tools drive both.
 - [Commands](#commands)
 - [WiFi and TCP](#wifi-and-tcp)
 - [Current limitations](#current-limitations)
+- [Boards with a v1.0 chip](#boards-with-a-v10-chip)
 - [About HDLC](#about-hdlc)
 - [Documentation](#documentation)
 - [Origins](#origins)
@@ -274,6 +275,23 @@ no authentication. Use it on a network you trust.
 - One TCP peer at a time.
 - WiFi is 2.4 GHz only (the ESP32-S2 has no 5 GHz radio).
 
+## Boards with a v1.0 chip
+
+INFO shows the chip revision: `rev 0` or `rev 100` (v1.0). On the two S2 Mini boards with a v1.0
+chip tested so far (both bought from AliExpress), USB data FROM the PC fails within seconds
+("A device attached to the system is not functioning" on Windows) while the board's WiFi is
+sending. The board itself keeps running, and data from the board to the PC keeps flowing.
+The board with a rev 0 chip passes the same test. Measured in [BUGS.md](BUGS.md) B1; whether a
+genuine LOLIN board with a v1.0 chip does the same is not known.
+
+What that means on such a board:
+
+- Works: USB only with WiFi idle; WiFi only (line to TCP) with no PC sending on USB; `MIRROR`
+  (it only sends from the board to the PC).
+- Does not work: `WIRELESS ON` (USB in, WiFi out at the same time). The firmware refuses it with
+  a warning; `WIRELESS ON FORCE` turns it on anyway, and `WIFI STATUS` then warns.
+- Unreliable: commands from the PC over USB while WiFi carries traffic.
+
 ## About HDLC
 
 HDLC (ISO 13239) and IBM's SDLC send frames between 0x7E flags on a clocked line. Inside a frame,
@@ -304,20 +322,3 @@ buffers or the decoder, and include the numbers.
 ## Licence
 
 No licence file yet.
-
-## Boards with a v1.0 chip
-
-INFO shows the chip revision: `rev 0` or `rev 100` (v1.0). On the two S2 Mini boards with a v1.0
-chip tested so far (both bought from AliExpress), USB data FROM the PC fails within seconds
-("A device attached to the system is not functioning" on Windows) while the board's WiFi is
-sending. The board itself keeps running, and data from the board to the PC keeps flowing.
-The board with a rev 0 chip passes the same test. Measured in [BUGS.md](BUGS.md) B1; whether a
-genuine LOLIN board with a v1.0 chip does the same is not known.
-
-What that means on such a board:
-
-- Works: USB only with WiFi idle; WiFi only (line to TCP) with no PC sending on USB; `MIRROR`
-  (it only sends from the board to the PC).
-- Does not work: `WIRELESS ON` (USB in, WiFi out at the same time). The firmware refuses it with
-  a warning; `WIRELESS ON FORCE` turns it on anyway, and `WIFI STATUS` then warns.
-- Unreliable: commands from the PC over USB while WiFi carries traffic.

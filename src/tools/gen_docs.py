@@ -47,6 +47,7 @@ GUIDES = [
     ('src/HDLCGW/README.md', 'HDLCGW firmware'),
     ('src/HDLCGW/LOOPBACK-TEST.md', 'HDLCGW loopback test'),
     ('src/XMSGGW/README.md', 'XMSGGW firmware'),
+    ('docs/Bench-Setups.md', 'Bench setups'),
     ('docs/HDLC-History.md', 'History of HDLC'),
     ('docs/README.md', 'Hardware notes'),
     ('docs/HDLC-3015-vs-MEGALINK-3023.md', 'HDLC 3015 and MegaLink 3023'),

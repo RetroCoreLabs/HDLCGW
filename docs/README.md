@@ -6,6 +6,8 @@ Reference material for the HDLCGW board. Back to the [repository front page](../
 
 | File | What it is |
 |---|---|
+| [Bench-Setups.md](Bench-Setups.md) | Every way the board, the two firmwares and the Pico have been wired and run on the bench, with what was measured. |
+| [HDLC-History.md](HDLC-History.md) | Where HDLC came from, and how it differs from LAPB and PPP. |
 | [HDLC-Cable-Measurements.md](HDLC-Cable-Measurements.md) | The measurement sheet and the measured DB-25 pinout of the ND HDLC socket. |
 | [HDLC-3015-vs-MEGALINK-3023.md](HDLC-3015-vs-MEGALINK-3023.md) | What differs between the two ND line cards the board plugs into (3015 HDLC and 3023 MEGALINK). |
 | [HDLC-PCB-ESP32-Wiring.svg](HDLC-PCB-ESP32-Wiring.svg) | Wiring of the PCB: S2 Mini, the two MAX3490E drivers and the DB-25, with the real ND pin numbers. |

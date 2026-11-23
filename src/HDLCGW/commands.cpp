@@ -1057,9 +1057,9 @@ static void handle_stat(const char *args)
                        (unsigned)wf.send_full, (unsigned)wf.line_full_waits,
                        (unsigned)wf.stalled_peers, (unsigned)wf.ring_high_water,
                        (unsigned)wf.ring_size);
-    console_out_printf("Too long (over %d bytes), dropped: %u from USB, %u from TCP\r\n",
-                       BYTE_FRAME_MAX, (unsigned)console_task_host_overlong(),
-                       (unsigned)wf.overlong_from_peer);
+    console_out_printf("Too long (over %d bytes), dropped: %u from USB, %u from TCP, %u from the line\r\n",
+                       GW_FRAME_MAX, (unsigned)console_task_host_overlong(),
+                       (unsigned)wf.overlong_from_peer, (unsigned)console_task_line_overlong());
     console_out_printf("No decoder buffer (out of memory at start-up), bytes dropped: "
                        "%u from USB, %u from TCP\r\n",
                        (unsigned)console_task_host_no_buffer(), (unsigned)wf.no_buffer_from_peer);

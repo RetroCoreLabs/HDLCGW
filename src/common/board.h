@@ -238,6 +238,12 @@ void board_wifi_protocol(void);
  *  it runs out sending stops (BUGS.md B2, docs/MEMORY-MAP.md). */
 #define BOARD_DMA_MARGIN 4096u
 
+/** Longest frame the gateways take, FCS included (Ronny, 2026-11-23: "Accept
+ *  and say 4105", as the Pico). Buffers stay BYTE_FRAME_MAX (4112, libhdlc);
+ *  the decoders and the line receive side refuse anything longer, count it as
+ *  too long, and HELLO sends maxframe=4105. */
+#define GW_FRAME_MAX 4105
+
 /**
  * @brief Lowest free DMA-capable internal RAM since start, in bytes.
  * @return heap_caps_get_minimum_free_size(MALLOC_CAP_DMA).

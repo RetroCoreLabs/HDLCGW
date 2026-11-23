@@ -260,7 +260,7 @@ void wifi_task_init(void)
         g_peer_decoder_buf = (uint8_t *)malloc(BYTE_FRAME_MAX);
     }
     /* -1 only for a NULL buffer: then every byte is counted in no_buffer. */
-    (void)byte_frame_decoder_init(&g_peer_decoder, g_peer_decoder_buf, BYTE_FRAME_MAX);
+    (void)byte_frame_decoder_init(&g_peer_decoder, g_peer_decoder_buf, GW_FRAME_MAX);
 
     /* PSRAM when the board has it (see RING_SIZE), internal heap otherwise.
      * Without it TCP output is simply off. */

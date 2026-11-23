@@ -151,7 +151,7 @@ static void handle_control_hello(const control_frame *cf)
                  "name=XMSGGW\nversion=%s\nbuild=%s %s\nmaxframe=%d\n"
                  "caps=cmd,log,stat,event,clock\n"
                  "chip=%s\nboard=LOLIN S2 Mini\n",
-                 XMSGGW_VERSION, __DATE__, __TIME__, BYTE_FRAME_MAX, ESP.getChipModel());
+                 XMSGGW_VERSION, __DATE__, __TIME__, GW_FRAME_MAX, ESP.getChipModel());
     if (n < 0)
     {
         n = 0;
@@ -628,7 +628,7 @@ void console_task_run(void *params)
     {
         host_buf = (uint8_t *)malloc(BYTE_FRAME_MAX);
     }
-    (void)byte_frame_decoder_init(&g_host_decoder, host_buf, BYTE_FRAME_MAX);
+    (void)byte_frame_decoder_init(&g_host_decoder, host_buf, GW_FRAME_MAX);
     g_usb_typed = xStreamBufferCreate(USB_TYPED_MAX, 1);
     g_job_text = (char *)heap_caps_calloc(1, JOB_TEXT_MAX, MALLOC_CAP_SPIRAM);
 

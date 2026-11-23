@@ -160,6 +160,12 @@ uint32_t console_task_usb_rx_bytes(void);
 uint32_t console_task_host_overlong(void);
 
 /**
+ * @brief Line frames dropped for being longer than GW_FRAME_MAX (board.h).
+ * @return Count since start.
+ */
+uint32_t console_task_line_overlong(void);
+
+/**
  * @brief Host bytes dropped because the host decoder got no buffer at start-up.
  * @return Count since boot; 0 when the buffer was allocated.
  */

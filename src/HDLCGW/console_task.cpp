@@ -107,6 +107,8 @@ static bool g_last_crc_good = false;
 /* 4 KB, allocated from PSRAM in console_task_init(): as a static array it
  * put dram0_0_seg 768 bytes over the top (2026-11-08). */
 #define BAD_HISTORY 4
+/* Line frames longer than GW_FRAME_MAX, dropped (counted as bad too). */
+static uint32_t g_line_overlong = 0;
 static uint8_t *g_bad_frames = NULL;    /* BAD_HISTORY slots of BYTE_FRAME_MAX */
 static int g_bad_lens[BAD_HISTORY];
 static int g_bad_next = 0;      /* slot the next bad frame goes into */
@@ -158,9 +160,13 @@ static void on_line_end(void *ctx, hdlc_rx_status status)
 {
     line_frame *lf = (line_frame *)ctx;
     bool crc_good = (status == HDLC_RX_OK);
-    bool fits = (lf->frame != NULL) && (g_last_frame != NULL) && (lf->len <= BYTE_FRAME_MAX);
+    bool fits = (lf->frame != NULL) && (g_last_frame != NULL) && (lf->len <= GW_FRAME_MAX);
 
     g_received_stats.total_frames++;
+    if (!fits && lf->frame != NULL)
+    {
+        g_line_overlong++;
+    }
 
     if (fits)
     {
@@ -380,6 +386,11 @@ static uint8_t *g_host_decoder_buf = NULL;
  * RAM (hot path), from console_task_init(). */
 static uint8_t *g_line_encode_buf = NULL;
 
+uint32_t console_task_line_overlong(void)
+{
+    return g_line_overlong;
+}
+
 uint32_t console_task_host_overlong(void)
 {
     return g_host_decoder.overlong;
@@ -477,7 +488,7 @@ void console_task_init(void)
     }
     /* -1 only for a NULL buffer; the decoder then counts every byte in
      * no_buffer and keeps none, which STAT shows. */
-    (void)byte_frame_decoder_init(&g_host_decoder, g_host_decoder_buf, BYTE_FRAME_MAX);
+    (void)byte_frame_decoder_init(&g_host_decoder, g_host_decoder_buf, GW_FRAME_MAX);
 }
 
 void console_task_send_line_frame(const uint8_t *frame, int len)
@@ -596,7 +607,7 @@ static void handle_control_hello(const control_frame *cf)
                  "name=HDLCGW\nversion=%s\nbuild=%s %s\nmaxframe=%d\n"
                  "caps=cmd,log,stat,event,clock,wifi\n"
                  "chip=%s\nboard=LOLIN S2 Mini\n",
-                 HDLCGW_VERSION, __DATE__, __TIME__, BYTE_FRAME_MAX, ESP.getChipModel());
+                 HDLCGW_VERSION, __DATE__, __TIME__, GW_FRAME_MAX, ESP.getChipModel());
     if (n < 0)
     {
         n = 0;

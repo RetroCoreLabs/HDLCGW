@@ -265,8 +265,19 @@ void wifi_task_init(void)
     /* PSRAM when the board has it (see RING_SIZE), internal heap otherwise.
      * Without it TCP output is simply off. */
     g_ring_ok = ring_buffer_alloc(&g_tcp_tx_buffer, RING_SIZE);
-    g_in_buf = (uint8_t *)heap_caps_malloc(TCP_READ_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    g_out_buf = (uint8_t *)heap_caps_malloc(TCP_WRITE_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    /* PSRAM: lwIP copies socket data into its own packets, so these need not
+     * be internal; internal RAM the radio sends from is scarce (MEMORY-MAP.md,
+     * BUGS.md B2). Internal only on a board without PSRAM. */
+    g_in_buf = (uint8_t *)heap_caps_malloc(TCP_READ_CHUNK, MALLOC_CAP_SPIRAM);
+    g_out_buf = (uint8_t *)heap_caps_malloc(TCP_WRITE_CHUNK, MALLOC_CAP_SPIRAM);
+    if (g_in_buf == NULL)
+    {
+        g_in_buf = (uint8_t *)heap_caps_malloc(TCP_READ_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (g_out_buf == NULL)
+    {
+        g_out_buf = (uint8_t *)heap_caps_malloc(TCP_WRITE_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
     if (g_in_buf == NULL || g_out_buf == NULL)
     {
         /* No peer I/O without them: run_peer_io() checks g_ring_ok. */

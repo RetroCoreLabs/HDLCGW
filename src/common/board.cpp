@@ -1082,6 +1082,11 @@ static void read_chip_ids(chip_ids *ids)
     }
 }
 
+unsigned board_dma_least(void)
+{
+    return (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_DMA);
+}
+
 void board_wifi_protocol(void)
 {
     /* The result is not checked on purpose: on failure the station joins with
@@ -1148,6 +1153,11 @@ void board_print_hardware(void (*print)(const char *text))
                    (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                    (unsigned)(heap_caps_get_free_size(MALLOC_CAP_32BIT | MALLOC_CAP_INTERNAL)
                               - heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+    print(text);
+    (void)snprintf(text, sizeof text, "DMA margin %u: %s\r\n", BOARD_DMA_MARGIN,
+                   (board_dma_least() < BOARD_DMA_MARGIN)
+                       ? "BELOW it since start - WiFi sending can stop (BUGS.md B2)"
+                       : "kept since start");
     print(text);
 
     (void)snprintf(text, sizeof text, "PSRAM: %u bytes, %u free, largest block %u\r\n",

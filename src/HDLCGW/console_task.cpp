@@ -440,8 +440,17 @@ static SemaphoreHandle_t g_line_mutex = NULL;
 static void send_line_frame_locked(const uint8_t *frame, int len, uint8_t *line,
                                    hdlc_encoder *encp, int *np);
 
+#define INPUT_MAX 1024
+/* PSRAM, allocated in console_task_init (docs/MEMORY-MAP.md, BUGS.md B2). */
+static char *g_input = NULL;   /* INPUT_MAX + 1 bytes */
+
 void console_task_init(void)
 {
+    g_input = (char *)heap_caps_malloc(INPUT_MAX + 1, MALLOC_CAP_SPIRAM);
+    if (g_input == NULL)
+    {
+        g_input = (char *)malloc(INPUT_MAX + 1);
+    }
     g_line_mutex = xSemaphoreCreateMutex();
     /* PSRAM first, internal heap as fallback; NULL leaves INSPECT BAD empty. */
     g_bad_frames = (uint8_t *)heap_caps_malloc(BAD_HISTORY * BYTE_FRAME_MAX, MALLOC_CAP_SPIRAM);
@@ -549,8 +558,6 @@ static HOT_PATH_CODE void send_line_frame_locked(const uint8_t *frame, int len, 
 
 /* ------------------------------------------------------ control frames */
 
-#define INPUT_MAX 1024
-static char g_input[INPUT_MAX + 1];
 static int g_input_pos = 0;
 
 /**

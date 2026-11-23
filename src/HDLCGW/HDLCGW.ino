@@ -27,6 +27,11 @@
 ** Ronny Hansen                                                          **
 ***************************************************************************/
 #include <Arduino.h>
+
+/* Arduino's loop task: 8192 by default, but loop() only calls board_tick once a
+ * second and used about 1.8 KB (TASK, 2026-11-23). The rest is internal RAM
+ * the WiFi radio needs (docs/MEMORY-MAP.md, BUGS.md B2). */
+SET_LOOP_TASK_STACK_SIZE(3 * 1024);
 /* The shared line code (HDLC framing, host framing, control frames, ring
  * buffer) lives in the libhdlc Arduino library. Included first so the IDE
  * finds it before any file below needs one of its headers. */
@@ -142,7 +147,9 @@ void setup(void)
     xTaskCreate(usb_tx_task_run, "USB tx", 2048, NULL, 1, NULL);
     /* The radio and the sockets: same level as USB output, below the line and
      * the console; a slow network must never cost line bytes. */
-    xTaskCreate(wifi_task_run, "WiFi", 8192, NULL, 1, NULL);
+    /* 4096: TASK showed at most about 1.9 KB used of 8192 (2026-11-23,
+     * docs/MEMORY-MAP.md). Check TASK after any change to the WiFi task. */
+    xTaskCreate(wifi_task_run, "WiFi", 4096, NULL, 1, NULL);
 }
 
 /**
@@ -150,6 +157,15 @@ void setup(void)
  */
 void loop(void)
 {
+    static bool dma_warned = false;
+
     vTaskDelay(pdMS_TO_TICKS(1000));
     board_tick(millis());
+    /* Once per start: the radio's memory fell under the margin (BUGS.md B2). */
+    if (!dma_warned && board_dma_least() < BOARD_DMA_MARGIN)
+    {
+        dma_warned = true;
+        console_out_log(CONTROL_FRAME_LOG_WARN, "DMA memory fell to %u bytes, under the %u margin: "
+                        "WiFi sending can stop (BUGS.md B2)", board_dma_least(), BOARD_DMA_MARGIN);
+    }
 }

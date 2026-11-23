@@ -1031,6 +1031,10 @@ static void handle_stat(const char *args)
                   "%u short writes resumed, %u flushes with the port closed\r\n",
                   (unsigned)usb_tx_task_dropped(), (unsigned)usb_tx_task_short_writes(),
                   (unsigned)usb_tx_task_host_closed_flushes());
+    console_out_printf("DMA memory (WiFi sends from it): %u free, least %u, margin %u%s\r\n",
+                       (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA), board_dma_least(),
+                       BOARD_DMA_MARGIN,
+                       (board_dma_least() < BOARD_DMA_MARGIN) ? " - BELOW (BUGS.md B2)" : "");
     console_out_printf("Rings high water: line RX %d of %d, line TX %d of %d, USB TX %d of %d\r\n",
                   ring_buffer_high_water(&g_rx_buffer), ring_buffer_size(&g_rx_buffer),
                   ring_buffer_high_water(&g_tx_buffer), ring_buffer_size(&g_tx_buffer),

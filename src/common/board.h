@@ -233,6 +233,17 @@ void board_print_restart(void (*print)(const char *text));
  */
 void board_wifi_protocol(void);
 
+/** DMA-capable internal RAM that must stay free under full traffic (Ronny,
+ *  2026-11-23): the WiFi radio sends only from that kind of memory, and when
+ *  it runs out sending stops (BUGS.md B2, docs/MEMORY-MAP.md). */
+#define BOARD_DMA_MARGIN 4096u
+
+/**
+ * @brief Lowest free DMA-capable internal RAM since start, in bytes.
+ * @return heap_caps_get_minimum_free_size(MALLOC_CAP_DMA).
+ */
+unsigned board_dma_least(void);
+
 /**
  * @brief Print the hardware: chip model, revision, cores and radios, CPU clock,
  *        flash (physical size, size the image was built for, speed, mode),

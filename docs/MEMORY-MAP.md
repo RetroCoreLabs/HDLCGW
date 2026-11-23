@@ -80,11 +80,28 @@ About 10 KB of stack is never touched.
    and read `INFO`; the DMA lowest must stay above the margin below.
 3. Task stacks are sized from the `TASK` high-water numbers plus a margin, not guessed.
 
-## Open (decisions for Ronny)
+## Done 2026-11-23 (Ronny chose: margin 4 KB; smaller stacks and our buffers to PSRAM; a
+## rebuilt core without the unused USB buffers maybe later)
 
-- Margin: how much DMA memory must stay free under full traffic (proposal: 2 KB).
-- Give back stack: loopTask 8 KB -> 3 KB (`SET_LOOP_TASK_STACK_SIZE`), WiFi task 8 KB -> 4 KB;
-  about 9 KB back, then measure the DMA figure again (not verified that stacks come from the
-  DMA-capable part).
-- Move `g_peek_fifo`, `g_input`, and the WiFi in/out buffers to PSRAM if they do not need DMA.
-- A guard in the firmware: STAT and the log warn when the DMA lowest falls under the margin.
+- loopTask stack 8192 -> 3072 (`SET_LOOP_TASK_STACK_SIZE`, HDLCGW.ino); WiFi task 8192 -> 4096.
+- To PSRAM: console input line (1025), console output chunk, frame and stuffed buffers (about
+  2,070), WiFi socket in/out buffers (2,484). Each falls back to internal RAM on a board
+  without PSRAM.
+- Margin `BOARD_DMA_MARGIN` = 4096 (board.h). INFO prints "DMA margin 4096: kept since start"
+  or "BELOW", STAT prints the DMA line, and the firmware logs one WARN when the lowest falls
+  under it.
+
+| Same WIRELESS test | DMA free at start | DMA lowest under traffic | Result |
+|---|---|---|---|
+| before (8d27152) | 3,848 | 104 | pass, no margin |
+| after | 19,300 | 14,724 | pass, 19467/19467, pings 100 % |
+
+Stacks after the change (TASK, never used): WiFi 2,116 of 4,096, loopTask 1,248 of 3,072.
+So the stacks did come out of the DMA-capable part (the open question above is answered).
+
+## Still open
+
+- XMSGGW has not had the same stack and buffer changes; its own measurement is needed.
+- The line buffers in the shared HDLC library (`g_peek_fifo`, `g_stuffed`, `g_peeked`,
+  `g_chunk`) belong to the libxmsg session.
+- A rebuilt Arduino core without the unused USB buffers (about 23 KB): later, Ronny's call.

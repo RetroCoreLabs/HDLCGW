@@ -20,6 +20,8 @@ PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by
 
 ## B2 - WiFi stops sending under WIRELESS traffic (first seen as two boards over WiFi)
 
+**Closed 2026-11-23:** stacks and buffers moved out of DMA-capable internal RAM; under the same test it now stays at 14,724 bytes or more (margin 4096 guarded in INFO, STAT and the log). docs/MEMORY-MAP.md.
+
 Trigger found 2026-11-23, cause underneath still open. Not two boards, not the server role:
 ONE board in WIRELESS mode with the PC as TCP peer (a TCP echo on the PC) fails the same way.
 Bisected on COM10 with that test (256-byte frames, 307200, 2-3 min, pings every 30 s):

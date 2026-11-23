@@ -101,7 +101,7 @@ static const command COMMANDS[] =
     { "WIFI",      "WIFI SSID <n>|PASS <p>|ON|OFF|CONNECT|STATUS|SCAN|SETUP|SHOW|CLEAR", handle_wifi },
     { "TCP",       "TCP SERVER [port]|CLIENT <host> <port>|OFF (frames over TCP)", handle_tcp },
     { "MIRROR",    "MIRROR ON|OFF - Line frames to USB too while a TCP peer is on", handle_mirror },
-    { "WIRELESS",  "WIRELESS ON [FORCE]|OFF - The TCP peer replaces the cable (USB frames go to it)",
+    { "WIRELESS",  "WIRELESS ON|OFF - The TCP peer replaces the cable (USB frames go to it)",
       handle_wireless },
     { "LOG",       "LOG [0..5] - 0 off, 1 error, 2 warn, 3 info, 4 debug, 5 trace", handle_log },
 };
@@ -145,11 +145,9 @@ static void print_wifi_help(void)
     console_out_println(
         "  MIRROR ON|OFF        - With a TCP peer, send line frames to USB as well");
     console_out_println(
-        "  WIRELESS ON [FORCE]|OFF - The TCP peer replaces the cable: frames from USB go to the");
+        "  WIRELESS ON|OFF      - The TCP peer replaces the cable: frames from USB go to the");
     console_out_println(
         "                         peer, the peer's frames come out on USB; the line is unused");
-    console_out_println(
-        "                         Refused on an ESP32-S2 v1.0 chip unless FORCE (BUGS.md B1)");
     console_out_println(
         "  The TCP stream carries RFC 1662 frames with FCS, like USB; commands stay on USB.");
 }
@@ -957,27 +955,11 @@ static void handle_wireless(const char *args)
     }
     else if (strcasecmp(args, "ON") == 0 || strcasecmp(args, "ON FORCE") == 0)
     {
-        /* BUGS.md B1: on the S2 Mini boards with a v1.0 chip measured so far
-         * (getChipRevision() 100), the board's own WiFi transmitter breaks USB
-         * packets from the PC, and WIRELESS is exactly that combination. Off
-         * unless asked for with FORCE (Ronny, 2026-11-15). */
-        bool force = strcasecmp(args, "ON FORCE") == 0;
-        if (ESP.getChipRevision() >= 100u && !force)
-        {
-            console_out_println("WIRELESS NOT turned on. WARNING: this board has an ESP32-S2 v1.0 chip.");
-            console_out_println("On the v1.0 boards tested, USB from the PC fails within seconds while");
-            console_out_println("WiFi is sending, and WIRELESS needs both at once. See BUGS.md B1.");
-            console_out_println("To turn it on anyway: WIRELESS ON FORCE");
-            return;
-        }
+        /* "ON FORCE" is still taken: it was needed on v1.0 chips until the
+         * 802.11b fix of BUGS.md B1 (2026-11-23), and scripts may still send it. */
         wifi_task_set_wireless(true);
         console_out_println("WIRELESS ON: frames from USB go to the TCP peer, and the peer's "
                             "frames come out on USB. The line is not used.");
-        if (ESP.getChipRevision() >= 100u)
-        {
-            console_out_println("WARNING: v1.0 chip, USB from the PC is expected to fail under "
-                                "WiFi traffic (BUGS.md B1).");
-        }
     }
     else if (strcasecmp(args, "OFF") == 0)
     {
@@ -986,7 +968,7 @@ static void handle_wireless(const char *args)
     }
     else
     {
-        console_out_println("Use WIRELESS ON, WIRELESS ON FORCE or WIRELESS OFF.");
+        console_out_println("Use WIRELESS ON or WIRELESS OFF.");
     }
 }
 

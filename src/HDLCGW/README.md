@@ -234,7 +234,7 @@ name and passphrase are shared with XMSGGW: set them in either firmware. `BAUD` 
 | `TCP OFF` | No TCP; line frames go to USB |
 | `TCP DEBUG` | The client socket, the gateway's buffers, the WiFi receive counters and lwIP's own state per connection, for fault finding |
 | `MIRROR ON\|OFF` | With a TCP peer connected, send line frames to USB as well |
-| `WIRELESS ON [FORCE]\|OFF` | The TCP peer replaces the cable: frames from USB go to the peer and the peer's frames come out on USB; the line is not used. For a test of two boards over WiFi with no cable (one `TCP SERVER`, the other `TCP CLIENT` to it). Stored; off by default. On a board with an ESP32-S2 v1.0 chip (INFO shows `rev 100`) it is refused with a warning unless `FORCE` is added: see "Boards with a v1.0 chip" below and [BUGS.md](BUGS.md) B1 |
+| `WIRELESS ON\|OFF` | The TCP peer replaces the cable: frames from USB go to the peer and the peer's frames come out on USB; the line is not used. For a test of two boards over WiFi with no cable (one `TCP SERVER`, the other `TCP CLIENT` to it). Stored; off by default. |
 
 **First-time setup**, no network configured yet. Opening the text console (ESC ESC ESC) asks by
 itself: it lists the networks it can see, takes a number from that list or a name, then the
@@ -291,20 +291,16 @@ no authentication. Use it on a network you trust.
 
 ## Boards with a v1.0 chip
 
-INFO shows the chip revision: `rev 0` or `rev 100` (v1.0). On the two S2 Mini boards with a v1.0
-chip tested so far (both bought from AliExpress), USB data FROM the PC fails within seconds
-("A device attached to the system is not functioning" on Windows) while the board's WiFi is
-sending. The board itself keeps running, and data from the board to the PC keeps flowing.
-The board with a rev 0 chip passes the same test. Measured in [BUGS.md](BUGS.md) B1; whether a
-genuine LOLIN board with a v1.0 chip does the same is not known.
+INFO shows the chip revision (`rev 0.0` or `rev 1.0`). On the S2 Mini boards with a v1.0 chip
+tested (both bought from AliExpress), USB data FROM the PC failed within seconds ("A device
+attached to the system is not functioning" on Windows) while the board's WiFi was sending at the
+802.11g/n rates. Espressif's change notice PCN20230702 says v1.0 sends with more power at those
+rates. With 802.11b only, the same test passed 5 of 5 runs (2 of 2 failed before).
 
-What that means on such a board:
-
-- Works: USB only with WiFi idle; WiFi only (line to TCP) with no PC sending on USB; `MIRROR`
-  (it only sends from the board to the PC).
-- Does not work: `WIRELESS ON` (USB in, WiFi out at the same time). The firmware refuses it with
-  a warning; `WIRELESS ON FORCE` turns it on anyway, and `WIFI STATUS` then warns.
-- Unreliable: commands from the PC over USB while WiFi carries traffic.
+So both firmwares join WiFi with 802.11b only, on every board (since 2026-11-23). That gives up
+to 11 Mbit/s on the air, about 5 Mbit/s usable; the gateway needs at most half a megabit. The
+WiFi router must accept 802.11b clients (most do unless "legacy" rates are switched off).
+History and measurements: [BUGS.md](BUGS.md) B1.
 
 ## About HDLC
 

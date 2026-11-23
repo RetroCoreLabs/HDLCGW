@@ -490,12 +490,6 @@ void wifi_task_print_status(void)
     }
     console_out_printf("MIRROR: %s\r\n", c.mirror ? "ON" : "OFF");
     console_out_printf("WIRELESS: %s\r\n", c.wireless ? "ON (the TCP peer replaces the cable)" : "OFF");
-    if (c.wireless && ESP.getChipRevision() >= 100u)
-    {
-        /* BUGS.md B1: a stored WIRELESS ON on a v1.0 chip was set with FORCE. */
-        console_out_println("WARNING: v1.0 chip; USB from the PC fails under WiFi traffic on the "
-                            "boards tested (BUGS.md B1)");
-    }
     console_out_printf("TCP last drop: %s, error %d, after %u ms connected (%u drops)\r\n",
                        g_drop_why, g_drop_err, (unsigned)g_drop_after_ms,
                        (unsigned)g_stats.peer_drops);

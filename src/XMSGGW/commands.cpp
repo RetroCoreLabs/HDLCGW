@@ -236,15 +236,8 @@ static void handle_info(const char *args)
     console_out_printf("XMSGGW %s, build %s %s\r\n", XMSGGW_VERSION, __DATE__, __TIME__);
     board_print_restart(console_out_print);
     console_out_printf("FreeRTOS version: %s\r\n", tskKERNEL_VERSION_NUMBER);
-    console_out_printf("ESP-IDF: %s, chip %s rev %u, %u MHz\r\n", ESP.getSdkVersion(),
-                       ESP.getChipModel(), (unsigned)ESP.getChipRevision(),
-                       (unsigned)ESP.getCpuFreqMHz());
-    console_out_printf("Internal RAM free %u (least %u), heap size %u\r\n",
-                       (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-                       (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
-                       (unsigned)ESP.getHeapSize());
-    console_out_printf("PSRAM: %u bytes, %u free\r\n", (unsigned)ESP.getPsramSize(),
-                       (unsigned)ESP.getFreePsram());
+    console_out_printf("ESP-IDF: %s\r\n", ESP.getSdkVersion());
+    board_print_hardware(console_out_print);
     console_out_printf("XMSG node: %u bytes of static RAM\r\n", (unsigned)st.node_bytes);
 }
 

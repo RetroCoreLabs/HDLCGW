@@ -680,15 +680,14 @@ static void handle_info(const char *args)
     console_out_printf("Build: %s %s\r\n", __DATE__, __TIME__);
     board_print_restart(console_out_print);
     console_out_printf("FreeRTOS version: %s\r\n", tskKERNEL_VERSION_NUMBER);
-    console_out_printf("ESP-IDF: %s, chip %s rev %u, %u MHz\r\n", ESP.getSdkVersion(),
-                  ESP.getChipModel(), (unsigned)ESP.getChipRevision(),
-                  (unsigned)ESP.getCpuFreqMHz());
+    console_out_printf("ESP-IDF: %s\r\n", ESP.getSdkVersion());
+    board_print_hardware(console_out_print);
     console_out_printf("Free Heap: %u bytes\r\n", (unsigned)ESP.getFreeHeap());
     console_out_printf("Minimum Ever Free Heap: %u bytes\r\n", (unsigned)ESP.getMinFreeHeap());
-    console_out_printf("Heap size: %u bytes\r\n", (unsigned)ESP.getHeapSize());
-    console_out_printf("PSRAM: %u bytes, %u free (TCP ring and bad-frame history; "
-                       "the line and USB rings are internal)\r\n",
-                       (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram());
+    /* What sits where, so the PSRAM line above can be read. Checked against the
+     * allocations on 2026-11-23 (console_task.cpp, wifi_task.cpp, usb_tx_task.cpp). */
+    console_out_print("PSRAM holds the bad-frame history, the last frame, the decoders' buffers and the "
+                      "frame copies to USB and TCP; the USB send ring and the line buffers are internal\r\n");
     wifi_task_print_status();
 }
 

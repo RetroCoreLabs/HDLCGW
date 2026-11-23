@@ -160,6 +160,20 @@ CRC register *not* inverted is for the firmware and never reaches the line. Type
 | 05 PING | empty | 85 EVENT | boot, mode change, line, clock, WiFi, TCP events |
 | | | 86 NAK | refused, with a reason |
 
+HELLO_REPLY keys (HDLCGW and XMSGGW send the same hardware keys; RC422Dev uses the same names
+for what a Pico can tell):
+
+- **Firmware:** `name`, `version`, `build`, `maxframe`, `caps` (comma separated), `chip` (read
+  from the chip), `board`.
+- **Chip:** `rev` (major.minor), `serial` (the factory MAC from eFuse, 12 hex digits; the S2 has
+  no other serial number), `cores`, `mhz`.
+- **Flash:** `flash` (bytes, read from the flash chip), `flashimage` (bytes the image is built
+  for), `flashmhz`, `flashmode` (the mode the chip starts in, from the bootloader header).
+- **RAM:** `ram` (internal heap size), `ramfree`, `ramleast` (least free since start), `ramblock`
+  (largest free block), `psram` (0 when none), `psramfree`, `psramblock`.
+
+`INFO` prints the same facts as text.
+
 `hdlc-loopback --port COM10 --no-console --command "<command>"` sends a COMMAND frame and prints
 the reply; repeat `--command` for several. The full wire format is described in libhdlc,
 `extras/docs/control-frames.md`, and the code is its `control_frame.h`.

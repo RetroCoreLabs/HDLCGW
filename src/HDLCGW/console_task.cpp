@@ -560,8 +560,8 @@ static int g_input_pos = 0;
  */
 static void handle_control_hello(const control_frame *cf)
 {
-    char text[200];
-    uint8_t payload[1 + sizeof(text)];
+    static char text[640];   /* static: off the console task stack; 200 until the hardware keys were added (2026-11-23); about 470 used */
+    static uint8_t payload[1 + sizeof(text)];
     int n;
 
     /* A fresh host session starts quiet, but it has asked for control
@@ -572,8 +572,8 @@ static void handle_control_hello(const control_frame *cf)
     n = snprintf(text, sizeof(text),
                  "name=HDLCGW\nversion=%s\nbuild=%s %s\nmaxframe=%d\n"
                  "caps=cmd,log,stat,event,clock,wifi\n"
-                 "chip=ESP32-S2\nboard=LOLIN S2 Mini\n",
-                 HDLCGW_VERSION, __DATE__, __TIME__, BYTE_FRAME_MAX);
+                 "chip=%s\nboard=LOLIN S2 Mini\n",
+                 HDLCGW_VERSION, __DATE__, __TIME__, BYTE_FRAME_MAX, ESP.getChipModel());
     if (n < 0)
     {
         n = 0;
@@ -582,6 +582,8 @@ static void handle_control_hello(const control_frame *cf)
     {
         n = (int)sizeof(text) - 1;
     }
+    /* cores, mhz, flash, ram, ramfree, psram: the same keys as RC422Dev. */
+    n += board_hello_hardware(&text[n], sizeof(text) - (size_t)n);
     payload[0] = CONTROL_FRAME_VERSION;
     memcpy(&payload[1], text, (size_t)n);
     (void)console_out_send_frame(CONTROL_FRAME_HELLO_REPLY, cf->id, CONTROL_FRAME_FLAG_LAST,

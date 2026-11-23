@@ -20,6 +20,10 @@
 #include <esp_ota_ops.h>
 #include <esp_heap_caps.h>
 #include <esp_partition.h>
+#include <esp_chip_info.h>
+#include <esp_flash.h>
+#include <esp_mac.h>
+#include <esp_app_format.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <esp_rom_sys.h>
@@ -987,6 +991,122 @@ bool board_ask_wifi(const board_ask_ops *ops)
     scan_networks();
     ops->print(ASK_SSID_TEXT);
     return true;
+}
+
+/* The flash mode the chip starts in: byte 2 (spi_mode, esp_image_spi_mode_t:
+ * QIO, QOUT, DIO, DOUT, FAST_READ, SLOW_READ) of the bootloader's image header
+ * at CONFIG_BOOTLOADER_OFFSET_IN_FLASH (esp_app_format.h, ESP-IDF in core
+ * 3.3.12). Not ESP.getFlashChipMode(): in core 3.3.12 it tests the ESP32's
+ * SPI register bits on every chip, and on the S2 it answered "slow read" for a
+ * build made as DIO (boards.txt lolin_s2_mini.build.flash_mode=dio), measured
+ * on the bench S2 on 2026-11-23. Returns 0..5, or -1 when it cannot be read. */
+static int flash_boot_mode(void)
+{
+    uint8_t head[4] = { 0 };
+
+    if (esp_flash_read(NULL, head, CONFIG_BOOTLOADER_OFFSET_IN_FLASH, sizeof head) != ESP_OK
+        || head[0] != ESP_IMAGE_HEADER_MAGIC || head[2] > 5u)
+    {
+        return -1;
+    }
+    return (int)head[2];
+}
+
+void board_print_hardware(void (*print)(const char *text))
+{
+    /* FlashMode_t order, Esp.h (core 3.3.12). */
+    static const char *const MODE[] = { "QIO", "QOUT", "DIO", "DOUT", "fast read", "slow read" };
+    char text[200];
+    esp_chip_info_t chip;
+    uint32_t phys = 0;
+    unsigned mode;
+
+    if (print == NULL)
+    {
+        return;
+    }
+    esp_chip_info(&chip);
+    (void)snprintf(text, sizeof text, "CPU: %s rev %u.%u, %u core%s, %u MHz;%s%s%s%s\r\n",
+                   ESP.getChipModel(), (unsigned)(chip.revision / 100u), (unsigned)(chip.revision % 100u),
+                   (unsigned)chip.cores, (chip.cores == 1u) ? "" : "s", (unsigned)ESP.getCpuFreqMHz(),
+                   ((chip.features & CHIP_FEATURE_WIFI_BGN) != 0u) ? " WiFi" : "",
+                   ((chip.features & CHIP_FEATURE_BT) != 0u) ? " BT" : "",
+                   ((chip.features & CHIP_FEATURE_BLE) != 0u) ? " BLE" : "",
+                   ((chip.features & CHIP_FEATURE_EMB_PSRAM) != 0u) ? " PSRAM-in-chip" : "");
+    print(text);
+
+    /* The physical size is read from the flash chip itself; the other is what
+     * the image header says the build was made for. They differ when a board
+     * carries more flash than the build uses. */
+    if (esp_flash_get_physical_size(NULL, &phys) != ESP_OK)
+    {
+        phys = 0;
+    }
+    mode = (unsigned)flash_boot_mode();   /* -1 becomes a large number: "unknown mode" */
+    (void)snprintf(text, sizeof text, "Flash: %lu bytes on the chip, image built for %lu, %lu MHz, %s\r\n",
+                   (unsigned long)phys, (unsigned long)ESP.getFlashChipSize(),
+                   (unsigned long)(ESP.getFlashChipSpeed() / 1000000u),
+                   (mode < sizeof MODE / sizeof MODE[0]) ? MODE[mode] : "unknown mode");
+    print(text);
+
+    (void)snprintf(text, sizeof text, "Internal RAM: %u free (least %u), largest block %u, heap size %u\r\n",
+                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                   (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+                   (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                   (unsigned)ESP.getHeapSize());
+    print(text);
+
+    (void)snprintf(text, sizeof text, "PSRAM: %u bytes, %u free, largest block %u\r\n",
+                   (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram(),
+                   (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+    print(text);
+}
+
+int board_hello_hardware(char *out, size_t size)
+{
+    esp_chip_info_t chip;
+    uint32_t phys = 0;
+    int n;
+
+    if (out == NULL || size == 0u)
+    {
+        return 0;
+    }
+    esp_chip_info(&chip);
+    if (esp_flash_get_physical_size(NULL, &phys) != ESP_OK)
+    {
+        phys = 0;
+    }
+    /* serial: the factory MAC from eFuse (esp_efuse_mac_get_default, the call
+     * EspClass::getEfuseMac makes in core 3.3.12). The ESP32-S2 has no other
+     * serial number; the factory MAC is unique per chip. */
+    uint8_t mac[6] = { 0 };
+    (void)esp_efuse_mac_get_default(mac);
+    /* FlashMode_t order, Esp.h (core 3.3.12). */
+    static const char *const MODE[] = { "qio", "qout", "dio", "dout", "fastread", "slowread" };
+    unsigned mode = (unsigned)flash_boot_mode();   /* -1 becomes a large number: "unknown" */
+    n = snprintf(out, size,
+                 "rev=%u.%u\nserial=%02X%02X%02X%02X%02X%02X\ncores=%u\nmhz=%u\n"
+                 "flash=%lu\nflashimage=%lu\nflashmhz=%lu\nflashmode=%s\n"
+                 "ram=%u\nramfree=%u\nramleast=%u\nramblock=%u\n"
+                 "psram=%u\npsramfree=%u\npsramblock=%u\n",
+                 (unsigned)(chip.revision / 100u), (unsigned)(chip.revision % 100u),
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+                 (unsigned)chip.cores, (unsigned)ESP.getCpuFreqMHz(),
+                 (unsigned long)phys, (unsigned long)ESP.getFlashChipSize(),
+                 (unsigned long)(ESP.getFlashChipSpeed() / 1000000u),
+                 (mode < sizeof MODE / sizeof MODE[0]) ? MODE[mode] : "unknown",
+                 (unsigned)ESP.getHeapSize(), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                 (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram(),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+    if (n < 0)
+    {
+        out[0] = '\0';
+        return 0;
+    }
+    return (n >= (int)size) ? (int)size - 1 : n;
 }
 
 void board_print_restart(void (*print)(const char *text))

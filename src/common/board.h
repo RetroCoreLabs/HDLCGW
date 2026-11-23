@@ -220,6 +220,27 @@ bool board_ask_wifi(const board_ask_ops *ops);
  */
 void board_print_restart(void (*print)(const char *text));
 
+/**
+ * @brief Print the hardware: chip model, revision, cores and radios, CPU clock,
+ *        flash (physical size, size the image was built for, speed, mode),
+ *        internal RAM and PSRAM. For INFO in both firmwares, so a board's
+ *        fitness as a gateway is read from the board (Ronny, 2026-11-23, after
+ *        testing plain ESP32 boards with no PSRAM).
+ * @param[in] print  Where the lines go.
+ */
+void board_print_hardware(void (*print)(const char *text));
+
+/**
+ * @brief The same hardware facts as HELLO key=value lines, each ending '\n':
+ *        cores, mhz, flash (bytes on the chip), ram (internal heap size),
+ *        ramfree, psram (bytes, 0 when none). Key names agreed with RC422Dev
+ *        so the PC tool shows one table for every board.
+ * @param[out] out   Buffer for the text, NUL terminated.
+ * @param[in]  size  Size of out.
+ * @return Length written (0 when out is NULL or size is 0), truncated to size - 1.
+ */
+int board_hello_hardware(char *out, size_t size);
+
 /** @brief Whether the waiting answer is a password: echo '*' instead of the letters. */
 bool board_ask_hidden(void);
 

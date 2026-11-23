@@ -80,8 +80,8 @@ About 10 KB of stack is never touched.
    and read `INFO`; the DMA lowest must stay above the margin below.
 3. Task stacks are sized from the `TASK` high-water numbers plus a margin, not guessed.
 
-## Done 2026-11-23 (Ronny chose: margin 4 KB; smaller stacks and our buffers to PSRAM; a
-## rebuilt core without the unused USB buffers maybe later)
+## Done 2026-11-23
+Ronny chose: margin 4 KB; smaller stacks and our buffers to PSRAM; a rebuilt core without the unused USB buffers maybe later.
 
 - loopTask stack 8192 -> 3072 (`SET_LOOP_TASK_STACK_SIZE`, HDLCGW.ino); WiFi task 8192 -> 4096.
 - To PSRAM: console input line (1025), console output chunk, frame and stuffed buffers (about

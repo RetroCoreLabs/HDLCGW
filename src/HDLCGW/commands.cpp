@@ -24,6 +24,8 @@
 
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/timers.h>
 
 #include "libhdlc/byte_frame.h"
 #include "console_out.h"
@@ -48,6 +50,7 @@
 static void handle_help(const char *args);
 static void handle_send(const char *args);
 static void handle_baud(const char *args);
+static void handle_blink(const char *args);
 static void handle_loopback(const char *args);
 static void handle_debug(const char *args);
 static void handle_dump(const char *args);
@@ -77,6 +80,7 @@ static const command COMMANDS[] =
     { "HELP",      "HELP [WIFI] - All commands, or only the WiFi and TCP ones", handle_help },
     { "SEND",      "SEND <hex bytes> - Send raw bytes, no framing",          handle_send },
     { "BAUD",      "BAUD <value>|MAX|DEFAULT - Set the transmit clock (stored, shared with XMSGGW)", handle_baud },
+    { "BLINK",     "BLINK VERYSLOW|SLOW|FAST|VERYFAST|ON|OFF - The board's own LED, to tell boards apart", handle_blink },
     { "LOOPBACK",  "LOOPBACK ON|OFF - Enable or disable loopback mode",      handle_loopback },
     { "DEBUG",     "DEBUG [HDLC|ECHO ON|OFF] - Frame decoding / line data on this console", handle_debug },
     { "DUMP",      "Dump received buffer",                                   handle_dump },
@@ -368,6 +372,72 @@ static bool set_bit_rate(uint32_t rate)
         console_out_println("Rate set, but could not be stored.");
     }
     return true;
+}
+
+/* BLINK: the board's own LED (LED_BUILTIN, GPIO15 on the LOLIN S2 Mini,
+ * pins_arduino.h in core 3.3.12; no HDLCGW signal uses that pin), so a person
+ * can see which board is on which USB port (Ronny, 2026-11-23). Blinking runs
+ * from a FreeRTOS timer, so the console stays free; it goes on until BLINK OFF. */
+static TimerHandle_t s_blink_timer = NULL;
+static bool s_blink_lit = false;
+
+static void blink_tick(TimerHandle_t timer)
+{
+    (void)timer;
+    s_blink_lit = !s_blink_lit;
+    digitalWrite(LED_BUILTIN, s_blink_lit ? HIGH : LOW);
+}
+
+/**
+ * @brief BLINK command: VERYSLOW, SLOW (default), FAST, VERYFAST, ON or OFF.
+ * @param[in] args  Rest of the line, or NULL.
+ */
+static void handle_blink(const char *args)
+{
+    /* Half-periods in ms: how long the LED stays on, then off. */
+    static const struct
+    {
+        const char *name;
+        uint32_t ms;
+    } SPEEDS[] = {
+        { "VERYSLOW", 1000u }, { "SLOW", 500u }, { "FAST", 150u }, { "VERYFAST", 50u },
+    };
+    const char *word = (args == NULL || *args == '\0') ? "SLOW" : args;
+
+    pinMode(LED_BUILTIN, OUTPUT);
+    if (s_blink_timer != NULL)
+    {
+        (void)xTimerStop(s_blink_timer, 0);
+    }
+    if (strcasecmp(word, "ON") == 0 || strcasecmp(word, "OFF") == 0)
+    {
+        s_blink_lit = (strcasecmp(word, "ON") == 0);
+        digitalWrite(LED_BUILTIN, s_blink_lit ? HIGH : LOW);
+        console_out_printf("Board LED (GPIO%u) %s\r\n", (unsigned)LED_BUILTIN, s_blink_lit ? "on" : "off");
+        return;
+    }
+    for (size_t i = 0; i < sizeof SPEEDS / sizeof SPEEDS[0]; i++)
+    {
+        if (strcasecmp(word, SPEEDS[i].name) != 0)
+        {
+            continue;
+        }
+        if (s_blink_timer == NULL)
+        {
+            s_blink_timer = xTimerCreate("blink", pdMS_TO_TICKS(SPEEDS[i].ms), pdTRUE, NULL, blink_tick);
+            if (s_blink_timer == NULL)
+            {
+                console_out_println("BLINK: no memory for the timer");
+                return;
+            }
+        }
+        (void)xTimerChangePeriod(s_blink_timer, pdMS_TO_TICKS(SPEEDS[i].ms), 0);
+        (void)xTimerStart(s_blink_timer, 0);
+        console_out_printf("Board LED (GPIO%u) blinking %s, %u ms on and off; BLINK OFF stops it\r\n",
+                           (unsigned)LED_BUILTIN, SPEEDS[i].name, (unsigned)SPEEDS[i].ms);
+        return;
+    }
+    console_out_println("BLINK VERYSLOW|SLOW|FAST|VERYFAST|ON|OFF");
 }
 
 /**

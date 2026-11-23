@@ -110,7 +110,7 @@ So the stacks did come out of the DMA-capable part (the open question above is a
 | XMSGGW | DMA free at start | DMA lowest | Node stack never used |
 |---|---|---|---|
 | before | 8,456 | 7,572 at rest | 10,212 of 12,288 |
-| after | 24,432 | 20,928 after 42 FTP logins (refused) and 10 telnet connects | 4,232 of 6,144 |
+| after | 24,432 | 20,928 after 31 FTP connection tries (20 refused logins, the rest turned away as a second session) and 10 telnet connects | 4,232 of 6,144 |
 
 Not measured yet: a CONNECT-TO session through the gateway and a real FTP file transfer, the
 two paths that run deepest in libxmsg. Repeat the TASK and INFO reading after one of each.

@@ -1134,6 +1134,22 @@ void board_print_hardware(void (*print)(const char *text))
                    (unsigned)ESP.getHeapSize());
     print(text);
 
+    /* BUGS.md B2: 1281 bytes of static internal RAM stopped WiFi sending while
+     * the internal free total stayed the same. These split internal RAM by
+     * kind, to see which one the WiFi driver runs short of. DMA = memory the
+     * chip's transfer hardware (the radio among it) can reach. */
+    (void)snprintf(text, sizeof text,
+                   "Internal RAM by kind: DMA %u free (least %u), largest block %u; "
+                   "8-bit %u free (least %u); 32-bit-only %u free\r\n",
+                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA),
+                   (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_DMA),
+                   (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA),
+                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                   (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                   (unsigned)(heap_caps_get_free_size(MALLOC_CAP_32BIT | MALLOC_CAP_INTERNAL)
+                              - heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+    print(text);
+
     (void)snprintf(text, sizeof text, "PSRAM: %u bytes, %u free, largest block %u\r\n",
                    (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram(),
                    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));

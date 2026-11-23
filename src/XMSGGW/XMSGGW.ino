@@ -24,6 +24,11 @@
 ** SPDX-License-Identifier: MIT  Copyright (c) 2026 Ronny Hansen         **
 ***************************************************************************/
 #include <Arduino.h>
+
+/* Arduino's loop task: 8192 by default, but loop() only calls board_tick once a
+ * second and left 6488 bytes untouched (TASK, 2026-11-23). The rest is internal
+ * RAM the WiFi radio needs (docs/MEMORY-MAP.md, BUGS.md B2). */
+SET_LOOP_TASK_STACK_SIZE(3 * 1024);
 /* arduino-cli finds a library only by a header included from the sketch. */
 #include <libhdlc.h>
 #include <libxmsg.h>
@@ -104,7 +109,10 @@ void setup(void)
      * STAT and TASK show what it has used. */
     xTaskCreate(spi_rx_task_run, "SPI rx", 2048, NULL, 24, NULL);
     xTaskCreate(spi_tx_task_run, "SPI tx", 2048, NULL, 8, NULL);
-    xTaskCreate(node_task_run, "Node", 12288, NULL, 4, NULL);   /* + the console (gw_console.h): PBKDF2, the command line */
+    /* 6144: TASK showed about 1.9 KB used of 12288 after start, the default-admin
+     * PBKDF2 and a refused FTP login (2026-11-23, docs/MEMORY-MAP.md); not yet
+     * measured under a CONNECT-TO session or a file transfer, hence the wide margin. */
+    xTaskCreate(node_task_run, "Node", 6144, NULL, 4, NULL);   /* + the console (gw_console.h): PBKDF2, the command line */
     xTaskCreate(console_task_run, "Console", 4096, NULL, 2, NULL);
     xTaskCreate(usb_tx_task_run, "USB tx", 2048, NULL, 1, NULL);
     /* WiFi and telnet at the lowest level, as HDLCGW's WiFi task: a slow
@@ -116,6 +124,15 @@ void setup(void)
 /** @brief Arduino main loop. Everything runs in the tasks; this only sleeps. */
 void loop(void)
 {
+    static bool dma_warned = false;
+
     vTaskDelay(pdMS_TO_TICKS(1000));
     board_tick(millis());
+    /* Once per start: the radio's memory fell under the margin (BUGS.md B2). */
+    if (!dma_warned && board_dma_least() < BOARD_DMA_MARGIN)
+    {
+        dma_warned = true;
+        console_out_log(CONTROL_FRAME_LOG_WARN, "DMA memory fell to %u bytes, under the %u margin: "
+                        "WiFi sending can stop (BUGS.md B2)", board_dma_least(), BOARD_DMA_MARGIN);
+    }
 }

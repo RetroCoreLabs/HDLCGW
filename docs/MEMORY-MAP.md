@@ -99,9 +99,24 @@ Ronny chose: margin 4 KB; smaller stacks and our buffers to PSRAM; a rebuilt cor
 Stacks after the change (TASK, never used): WiFi 2,116 of 4,096, loopTask 1,248 of 3,072.
 So the stacks did come out of the DMA-capable part (the open question above is answered).
 
+## XMSGGW, done 2026-11-23
+
+- loopTask stack 8192 -> 3072, Node task 12288 -> 6144 (Telnet stays 6144: used about 2.7 KB).
+- To PSRAM: console output chunk, frame and stuffed buffers (about 2,070), and the Node task's
+  line receive, transmit and last-frame buffers (about 2,000). The Node task refuses to run,
+  with a log line, if it gets no memory for them at all.
+- Same DMA margin guard (INFO line and a one-time log WARN).
+
+| XMSGGW | DMA free at start | DMA lowest | Node stack never used |
+|---|---|---|---|
+| before | 8,456 | 7,572 at rest | 10,212 of 12,288 |
+| after | 24,432 | 20,928 after 42 FTP logins (refused) and 10 telnet connects | 4,232 of 6,144 |
+
+Not measured yet: a CONNECT-TO session through the gateway and a real FTP file transfer, the
+two paths that run deepest in libxmsg. Repeat the TASK and INFO reading after one of each.
+
 ## Still open
 
-- XMSGGW has not had the same stack and buffer changes; its own measurement is needed.
 - The line buffers in the shared HDLC library (`g_peek_fifo`, `g_stuffed`, `g_peeked`,
   `g_chunk`) belong to the libxmsg session.
 - A rebuilt Arduino core without the unused USB buffers (about 23 KB): later, Ronny's call.

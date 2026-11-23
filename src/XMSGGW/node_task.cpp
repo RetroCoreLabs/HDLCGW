@@ -41,8 +41,11 @@ static XmsgNode *s_np = NULL;
 static bool s_node_ok = false;
 
 static hdlc_decoder s_dec;
-static uint8_t s_rx_frame[LINE_FRAME_MAX];
-static uint8_t s_tx_line[LINE_ENCODED_MAX];
+/* PSRAM, allocated in node_task_init: internal RAM that the WiFi radio can
+ * send from is scarce (docs/MEMORY-MAP.md, BUGS.md B2). The line tasks copy
+ * frames in and out of their own rings, so no DMA touches these. */
+static uint8_t *s_rx_frame = NULL;   /* LINE_FRAME_MAX bytes */
+static uint8_t *s_tx_line = NULL;    /* LINE_ENCODED_MAX bytes */
 
 static volatile bool s_want_start = false;
 static volatile bool s_want_stop = false;
@@ -63,7 +66,7 @@ static uint32_t s_tx_full = 0;
  * (same history as HDLCGW console_task.cpp; four because one run lost three
  * frames in two minutes there). Internal RAM, 5 x 626 bytes. */
 #define BAD_HISTORY 4
-static uint8_t s_last_frame[LINE_FRAME_MAX];
+static uint8_t *s_last_frame = NULL;   /* LINE_FRAME_MAX bytes, PSRAM */
 static int s_last_len = 0;
 static bool s_last_good = false;
 /* In PSRAM (2.5 KB): internal RAM is full since the USB console became a
@@ -216,6 +219,14 @@ static void link_state(void *ctx, LapbState state, bool up, bool ready, const ch
 
 /* ----------------------------------------------------------------- task */
 
+/* PSRAM first; internal only on a board without it. */
+static uint8_t *alloc_buffer(size_t size)
+{
+    uint8_t *p = (uint8_t *)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+
+    return (p != NULL) ? p : (uint8_t *)malloc(size);
+}
+
 void node_task_init(void)
 {
     XmsgNodeConfig cfg;
@@ -231,8 +242,17 @@ void node_task_init(void)
     {
         console_out_log(CONTROL_FRAME_LOG_ERROR, "No PSRAM for the host's name table");
     }
+    s_rx_frame = alloc_buffer(LINE_FRAME_MAX);
+    s_tx_line = alloc_buffer(LINE_ENCODED_MAX);
+    s_last_frame = alloc_buffer(LINE_FRAME_MAX);
+    if (s_rx_frame == NULL || s_tx_line == NULL || s_last_frame == NULL)
+    {
+        /* Not even internal RAM: the node cannot run. Fail loudly. */
+        console_out_log(CONTROL_FRAME_LOG_ERROR, "No memory for the line frame buffers");
+        return;
+    }
     hdlc_decoder_reset(&s_dec);
-    hdlc_decoder_set_buffer(&s_dec, s_rx_frame, (int)sizeof s_rx_frame);
+    hdlc_decoder_set_buffer(&s_dec, s_rx_frame, LINE_FRAME_MAX);
 
     memset(&s_status, 0, sizeof s_status);
     s_status.own_node = own;
@@ -354,6 +374,13 @@ void node_task_run(void *params)
 {
     uint8_t block[256];
     (void)params;
+
+    if (s_rx_frame == NULL || s_tx_line == NULL || s_last_frame == NULL)
+    {
+        /* node_task_init logged it; no node without its frame buffers. */
+        vTaskDelete(NULL);
+        return;
+    }
 
     s_bad_frames = (uint8_t (*)[LINE_FRAME_MAX])heap_caps_calloc(BAD_HISTORY, LINE_FRAME_MAX,
                                                                  MALLOC_CAP_SPIRAM);

@@ -37,7 +37,9 @@ uint16_t g_console_out_stat_period_ms = 0;
 static bool g_in_reply = false;
 static uint8_t g_reply_id = 0;
 static uint8_t g_chunk_counter = 0;
-static uint8_t g_chunk[CONSOLE_OUT_CHUNK];
+/* PSRAM, allocated at init: internal RAM that the WiFi radio can send from is
+ * scarce (docs/MEMORY-MAP.md, BUGS.md B2). */
+static uint8_t *g_chunk = NULL;   /* CONSOLE_OUT_CHUNK bytes */
 static int g_chunk_len = 0;
 
 static console_out_stats g_stats;
@@ -48,8 +50,16 @@ static console_out_stats g_stats;
  * chunk. */
 #define CONSOLE_OUT_MAX_FRAME (CONSOLE_OUT_CHUNK + CONTROL_FRAME_OVERHEAD)
 static SemaphoreHandle_t g_frame_mutex = NULL;
-static uint8_t g_frame[CONSOLE_OUT_MAX_FRAME];
-static uint8_t g_stuffed[2 + 2 * CONSOLE_OUT_MAX_FRAME];
+static uint8_t *g_frame = NULL;     /* CONSOLE_OUT_MAX_FRAME bytes, PSRAM */
+static uint8_t *g_stuffed = NULL;   /* 2 + 2 * CONSOLE_OUT_MAX_FRAME bytes, PSRAM */
+
+/* PSRAM first; internal only on a board without it. */
+static uint8_t *alloc_buffer(size_t size)
+{
+    uint8_t *p = (uint8_t *)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+
+    return (p != NULL) ? p : (uint8_t *)malloc(size);
+}
 
 /* Text written in DEBUG mode by more than one task (console replies, node
  * log lines) is kept whole by this lock. */
@@ -62,7 +72,14 @@ void console_out_init(void)
     g_in_reply = false;
     g_chunk_len = 0;
     memset(&g_stats, 0, sizeof(g_stats));
-    if (g_frame_mutex == NULL)
+    if (g_chunk == NULL)
+    {
+        g_chunk = alloc_buffer(CONSOLE_OUT_CHUNK);
+        g_frame = alloc_buffer(CONSOLE_OUT_MAX_FRAME);
+        g_stuffed = alloc_buffer(2 + 2 * CONSOLE_OUT_MAX_FRAME);
+    }
+    /* No mutex without the buffers: send_frame then drops every frame. */
+    if (g_frame_mutex == NULL && g_chunk != NULL && g_frame != NULL && g_stuffed != NULL)
     {
         g_frame_mutex = xSemaphoreCreateMutex();
     }
@@ -188,7 +205,7 @@ static void console_out_write(const char *s, int n)
         g_cap_buf[g_cap_len] = '\0';
         return;
     }
-    if (!g_in_reply)
+    if (!g_in_reply || g_chunk == NULL)
     {
         /* Outside a reply the port is the text console only in DEBUG mode;
          * in FORWARDING it carries frames and loose text would break them. */

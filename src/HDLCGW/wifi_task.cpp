@@ -66,8 +66,6 @@
  * answers could not get in (no free WiFi receive buffer). With WIFI_RX_COPY
  * that cannot happen, and keepalive is what finds a peer that vanished. */
 #define TCP_KEEPALIVE_ON   1
-/* 1: the station joins with 802.11b/g only (experiment, see run_station). */
-#define WIFI_NO_11N        0   /* tried 1 on 2026-11-09 11:28: same failure on 11g (BUGS.md T2) */
 /* 1: copy every received WiFi frame out of the driver's buffer before lwIP
  * sees it (wifi_rx_copy, BUGS.md T2). 0: ESP-IDF's own zero-copy receive. */
 #define WIFI_RX_COPY       1
@@ -691,13 +689,7 @@ static void run_station(uint32_t now)
         WiFi.persistent(false);
         WiFi.mode(WIFI_STA);
         WiFi.setSleep(false);
-#if WIFI_NO_11N
-        /* 802.11b/g only, no 11n, so no A-MPDU receive reordering in the
-         * driver. Experiment 2026-11-09 (BUGS.md T2): lwIP waited for a
-         * missing segment that never arrived, retransmits included, while
-         * later segments sat in its out-of-order queue. */
-        (void)esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G);
-#endif
+        board_wifi_protocol();   /* 802.11b only, BUGS.md B1 */
         WiFi.setHostname(HOSTNAME);
         WiFi.begin(g_live.ssid, g_live.pass[0] != '\0' ? g_live.pass : NULL);
         g_wifi_begun = true;

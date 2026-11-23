@@ -221,6 +221,19 @@ bool board_ask_wifi(const board_ask_ops *ops);
 void board_print_restart(void (*print)(const char *text));
 
 /**
+ * @brief Limit the WiFi station to 802.11b. Call after WiFi.mode(WIFI_STA)
+ *        and before WiFi.begin(), in both firmwares.
+ *
+ * BUGS.md B1: on ESP32-S2 v1.0 boards USB from the PC failed whenever the
+ * radio sent at the g/n rates (2 of 2 runs), and never with 802.11b only
+ * (4 of 4), full send power both times, 2026-11-23. Espressif PCN20230702
+ * says v1.0 sends with more power at the fast g/n rates. Ronny chose 802.11b
+ * on every board: up to 11 Mbit/s on the air, the gateway needs at most
+ * half a megabit.
+ */
+void board_wifi_protocol(void);
+
+/**
  * @brief Print the hardware: chip model, revision, cores and radios, CPU clock,
  *        flash (physical size, size the image was built for, speed, mode),
  *        internal RAM and PSRAM. For INFO in both firmwares, so a board's

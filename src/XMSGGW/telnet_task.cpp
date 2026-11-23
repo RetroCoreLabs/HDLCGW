@@ -365,6 +365,7 @@ static void run_wifi(uint32_t now)
         WiFi.persistent(false);
         WiFi.mode(WIFI_STA);
         WiFi.setSleep(false);
+        board_wifi_protocol();   /* 802.11b only, BUGS.md B1 */
         WiFi.setHostname(HOSTNAME);
         WiFi.begin(s_ssid, (s_pass[0] != '\0') ? s_pass : NULL);
         s_wifi_begun = true;

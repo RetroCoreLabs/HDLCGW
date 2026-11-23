@@ -20,7 +20,7 @@ PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by
 
 ## B1 - a second S2 Mini (COM20) drops off USB under traffic
 
-Open, 2026-11-14. Cause: these boards' WiFi transmitter breaks USB from the PC (measured A/B, see the end of this entry). Open until a good v1.0 board is tested.
+Fixed 2026-11-23: both firmwares join WiFi with 802.11b only (`board_wifi_protocol`, commit below). Cause as far as measured: on v1.0 chips the radio sending at the fast g/n rates breaks USB from the PC; see the 2026-11-23 section at the end.
 
 Setup: two LOLIN S2 Minis with the same build (HDLCGW 0.3.5, built 18:07:00 that day), both on
 WiFi, joined over TCP with WIRELESS ON (the TCP peer replaces the cable), PC test tool
@@ -97,6 +97,29 @@ this is tested.
 
 Does not fit yet: the failure seen with WIRELESS OFF (above) was before the change of hub and
 cable, and has not been repeated on the direct port.
+
+2026-11-23, the cause narrowed, and the fix. Read from the chips (new INFO lines): the bench board
+(works) is chip revision 0.0, the 15 November board (fails, now COM24) revision 1.0; package,
+eFuse block, built-in flash and PSRAM, flash chip (JEDEC 204016) and all USB and flash-supply
+eFuses are the same. Espressif's change notice PCN20230702 (v0.0 to v1.0) says v1.0 sends with
+more power at the fast 802.11g/n data rates; 802.11b and the low rates are unchanged. No
+Espressif erratum or public report of USB failing during WiFi send was found.
+
+Test on COM24, full send power, PC writing frames to USB (single port, 307200, 256-byte
+frames; with nothing on the line the window fills, so the USB load is light after the first
+seconds and the same in every run) while 20 pings of 1400 bytes run against the board for the
+whole 60 s:
+
+| Build | Runs | USB from the PC | Pings answered |
+|---|---|---|---|
+| normal (802.11b/g/n) | 2 | failed in both, board dropped off USB until replugged | 405 of 800, 374 of 1500 |
+| 802.11b only | 5 (4 test switch, 1 final build) | no error in any | 799/800, 1491, 1493, 1492, 1463, 1499 of 1500 |
+
+Fix chosen by Ronny: 802.11b on every board, both firmwares, revision 0.0 too (one behaviour
+everywhere). 802.11b gives up to 11 Mbit/s on the air, about 5 Mbit/s usable; the gateway
+needs at most half a megabit. The router must accept 802.11b clients (this one does). Not
+measured: whether a real LOLIN board with a v1.0 chip also needed it, and the old failure with
+WIRELESS OFF before the hub change.
 
 ## The TCP findings of 2026-11-09 (first sustained TCP run 10:42, last fix 12:35)
 

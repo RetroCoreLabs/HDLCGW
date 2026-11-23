@@ -25,6 +25,7 @@
 #include <esp_mac.h>
 #include <esp_app_format.h>
 #include <esp_efuse.h>
+#include <esp_wifi.h>
 #include <esp_efuse_table.h>
 #include <esp_system.h>
 #include <esp_timer.h>
@@ -1079,6 +1080,14 @@ static void read_chip_ids(chip_ids *ids)
     {
         ids->flash_id = 0;
     }
+}
+
+void board_wifi_protocol(void)
+{
+    /* The result is not checked on purpose: on failure the station joins with
+     * the driver's default b/g/n and B1 can come back; esp_wifi_set_protocol
+     * only fails when WiFi is not started, which WiFi.mode() just did. */
+    (void)esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B);
 }
 
 void board_print_hardware(void (*print)(const char *text))

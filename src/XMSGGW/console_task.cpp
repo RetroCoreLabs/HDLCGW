@@ -126,14 +126,28 @@ static void send_nak(uint8_t id, uint8_t reason)
  */
 static void handle_control_hello(const control_frame *cf)
 {
-    static char text[640];   /* static: off the console task stack; 200 until the hardware keys were added (2026-11-23); about 470 used */
-    static uint8_t payload[1 + sizeof(text)];
+    /* The reply buffers live in PSRAM, allocated on the first HELLO. As static
+     * arrays (1281 bytes of internal RAM) they made HDLCGW's WiFi stop SENDING
+     * under traffic (BUGS.md B2 in HDLCGW); the same code here. */
+    enum { TEXT_SIZE = 640 };
+    static char *text = NULL;
+    static uint8_t *payload = NULL;
     int n;
+
+    if (text == NULL)
+    {
+        text = (char *)heap_caps_malloc(TEXT_SIZE, MALLOC_CAP_SPIRAM);
+        payload = (uint8_t *)heap_caps_malloc(1 + TEXT_SIZE, MALLOC_CAP_SPIRAM);
+        if (text == NULL || payload == NULL)
+        {
+            return;
+        }
+    }
 
     /* A fresh host session starts quiet. */
     console_out_host_reset();
 
-    n = snprintf(text, sizeof(text),
+    n = snprintf(text, TEXT_SIZE,
                  "name=XMSGGW\nversion=%s\nbuild=%s %s\nmaxframe=%d\n"
                  "caps=cmd,log,stat,event,clock\n"
                  "chip=%s\nboard=LOLIN S2 Mini\n",
@@ -142,12 +156,12 @@ static void handle_control_hello(const control_frame *cf)
     {
         n = 0;
     }
-    if (n >= (int)sizeof(text))
+    if (n >= (int)TEXT_SIZE)
     {
-        n = (int)sizeof(text) - 1;
+        n = (int)TEXT_SIZE - 1;
     }
     /* cores, mhz, flash, ram, ramfree, psram: the same keys as RC422Dev. */
-    n += board_hello_hardware(&text[n], sizeof(text) - (size_t)n);
+    n += board_hello_hardware(&text[n], TEXT_SIZE - (size_t)n);
     payload[0] = CONTROL_FRAME_VERSION;
     memcpy(&payload[1], text, (size_t)n);
     (void)console_out_send_frame(CONTROL_FRAME_HELLO_REPLY, cf->id, CONTROL_FRAME_FLAG_LAST,

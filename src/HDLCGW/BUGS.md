@@ -38,6 +38,22 @@ What was measured:
   of PSRAM (1,982,792 -> 1,995,096 free). Same picture as the "wider than one socket" stall in
   the TCP findings of 2026-11-09 below, which `WIFI_RX_COPY` fixed for the PC-as-peer case.
 
+Later the same day, with the PC test tool on COM10 only and the gateway window echoing every
+frame COM24 gives it back into COM24 (full two-way traffic, COM24's USB free for `TCP DEBUG`):
+
+- This time the CLIENT (COM10, rev 0.0) went deaf (pings 60-70 % lost), the server COM24 kept
+  answering 100 %. So it is not tied to the server role either; either board can be hit.
+- COM24 during the stall: 900 bytes sent and not acknowledged, retransmitting (nrtx 1), nothing
+  received for 30 s; no out-of-order data, receive window open.
+- COM10 after the run, still deaf: its WiFi RECEIVE works (8944 frames copied, 0 dropped), but
+  its new connection is stuck in SYN_SENT with the SYN still in the unsent queue, and its pings
+  are half answered. lwIP holds no backlog, memory is fine. So on the deaf board the SEND path
+  under lwIP (WiFi driver transmit) is what stalls. WIFI CONNECT clears it.
+- Core 3.3.12 sdkconfig: static WiFi TX buffers 8, TX cache 16, A-MPDU TX on, BA window 6,
+  `SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y`. TCP_NODELAY and WiFi sleep off are already set.
+- Web search (2026-11-23): esp32.com has several "IP stops answering until esp_wifi_stop/start"
+  threads with no confirmed cause; nothing on board-to-board TCP specifically.
+
 Not known: why the 2026-11-09 fix does not cover a board-to-board link; whether the client's
 sending pattern (many small segments both ways) refills lwIP's out-of-order queue. Next: TCP
 DEBUG counters (out-of-order queue length) on the server during a run.

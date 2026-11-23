@@ -37,6 +37,13 @@ memory the WiFi send path then lacks (DMA-capable memory, a region, a block size
 keeping those buffers in PSRAM; open until the mechanism is measured, because any new internal
 allocation (the planned web page) can bring it back.
 
+Root cause measured the same day (new INFO line "Internal RAM by kind"): the WiFi driver sends
+from DMA-capable internal RAM. Normal build: 3848 bytes of it free at start, 104 at the lowest
+under traffic, passes. With 1281 static bytes added: 2572 at start, 136 lowest, sending stops.
+The internal total (about 10-11 KB) is mostly memory the radio cannot use. Details, the list of
+what sits where, and the rules: docs/MEMORY-MAP.md. B2 stays open until a margin is agreed and
+kept (proposal there: 2 KB of DMA memory free under full traffic).
+
 Earlier notes, 2026-11-23, before the trigger was found: Setup: two S2 Minis on HDLCGW (0357688 + 479bb00), both WIRELESS ON, one
 `TCP SERVER 1362`, the other `TCP CLIENT` to it; PC test tool
 `hdlc-loopback --port COM10 --port-b COM24 --no-baud --size <n> --seconds 90 --rates 307200`.

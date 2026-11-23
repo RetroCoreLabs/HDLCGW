@@ -18,9 +18,26 @@ PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by
 
 <!-- /contents -->
 
-## B2 - two boards over WiFi: the TCP server stops answering on the network
+## B2 - WiFi stops sending under WIRELESS traffic (first seen as two boards over WiFi)
 
-Open, 2026-11-23. Setup: two S2 Minis on HDLCGW (0357688 + 479bb00), both WIRELESS ON, one
+Trigger found 2026-11-23, cause underneath still open. Not two boards, not the server role:
+ONE board in WIRELESS mode with the PC as TCP peer (a TCP echo on the PC) fails the same way.
+Bisected on COM10 with that test (256-byte frames, 307200, 2-3 min, pings every 30 s):
+
+| Build | Result |
+|---|---|
+| 5499fd8 (before today) | PASS twice: 26735/26735 and 9265/9265 frames, pings 100 % |
+| 1154cae (chip info), d02ca5a, HEAD | FAIL 4 of 4: 7 to 78 frames back of 362-438, pings 40 % from 30 s |
+| HEAD with only the HELLO reply buffers moved from static internal RAM to PSRAM | PASS 19272/19272, pings 100 % |
+
+1154cae made the two HELLO buffers static (640 + 641 bytes of internal RAM). Free internal RAM
+after traffic was NOT lower in the failing builds (10896, least 8208) than in the passing one
+(10620, least 7696), so it is not "out of memory" by the total. Not measured: which internal
+memory the WiFi send path then lacks (DMA-capable memory, a region, a block size). Fixed by
+keeping those buffers in PSRAM; open until the mechanism is measured, because any new internal
+allocation (the planned web page) can bring it back.
+
+Earlier notes, 2026-11-23, before the trigger was found: Setup: two S2 Minis on HDLCGW (0357688 + 479bb00), both WIRELESS ON, one
 `TCP SERVER 1362`, the other `TCP CLIENT` to it; PC test tool
 `hdlc-loopback --port COM10 --port-b COM24 --no-baud --size <n> --seconds 90 --rates 307200`.
 

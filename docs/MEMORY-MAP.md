@@ -112,8 +112,17 @@ So the stacks did come out of the DMA-capable part (the open question above is a
 | before | 8,456 | 7,572 at rest | 10,212 of 12,288 |
 | after | 24,432 | 20,928 after 31 FTP connection tries (20 refused logins, the rest turned away as a second session) and 10 telnet connects | 4,232 of 6,144 |
 
-Not measured yet: a CONNECT-TO session through the gateway and a real FTP file transfer, the
-two paths that run deepest in libxmsg. Repeat the TASK and INFO reading after one of each.
+Under real use, 2026-11-23 (COM10 board, line through the Pico and the PC window to D100 at
+307200 bit/s): a telnet login, CONNECT D100 with a SINTRAN login and commands, FTP listings
+and a 46,516-byte download (13 s):
+
+| XMSGGW, after that | Never used of 6,144 | DMA lowest |
+|---|---|---|
+| Node task | 2,308 (worst use about 3.8 KB, during the FTP download) | 19,500 |
+| Telnet task | 2,924 | |
+
+Line: 9,147 frames sent, 5,765 received, 0 bad on either end. Node stays at 6,144: 2.3 KB
+left is the margin for a longer transfer or several sessions at once (not measured).
 
 ## Still open
 

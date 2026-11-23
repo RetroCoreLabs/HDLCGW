@@ -18,6 +18,30 @@ PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by
 
 <!-- /contents -->
 
+## B2 - two boards over WiFi: the TCP server stops answering on the network
+
+Open, 2026-11-23. Setup: two S2 Minis on HDLCGW (0357688 + 479bb00), both WIRELESS ON, one
+`TCP SERVER 1362`, the other `TCP CLIENT` to it; PC test tool
+`hdlc-loopback --port COM10 --port-b COM24 --no-baud --size <n> --seconds 90 --rates 307200`.
+
+What was measured:
+
+- Every run: after 20 to 77 s of traffic the link drops ("socket took nothing for 10 s", or
+  error 113), and only a few frames ever arrive (0 to 485 of 177 to 1165 sent, 64-4000 bytes).
+  USB never failed; neither board restarted.
+- Afterwards the SERVER board answers only 40-50 % of pings (idle, no traffic) and the client
+  cannot reconnect; the client answers 100 %. COM24 server: `TCP flow: socket full 9876 times`.
+- It follows the server role: COM24 (rev 1.0) as server, then COM10 (rev 0.0) as server, same.
+- Not caused by 802.11b: a test build with normal b/g/n WiFi on the server (COM10) failed the
+  same way, twice.
+- `WIFI CONNECT` (or RESET) on the stuck board brings pings back at once and frees about 12 KB
+  of PSRAM (1,982,792 -> 1,995,096 free). Same picture as the "wider than one socket" stall in
+  the TCP findings of 2026-11-09 below, which `WIFI_RX_COPY` fixed for the PC-as-peer case.
+
+Not known: why the 2026-11-09 fix does not cover a board-to-board link; whether the client's
+sending pattern (many small segments both ways) refills lwIP's out-of-order queue. Next: TCP
+DEBUG counters (out-of-order queue length) on the server during a run.
+
 ## B1 - a second S2 Mini (COM20) drops off USB under traffic
 
 Fixed 2026-11-23: both firmwares join WiFi with 802.11b only (`board_wifi_protocol`, commit below). Cause as far as measured: on v1.0 chips the radio sending at the fast g/n rates breaks USB from the PC; see the 2026-11-23 section at the end.

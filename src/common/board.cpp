@@ -24,6 +24,8 @@
 #include <esp_flash.h>
 #include <esp_mac.h>
 #include <esp_app_format.h>
+#include <esp_efuse.h>
+#include <esp_efuse_table.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <esp_rom_sys.h>
@@ -1012,6 +1014,73 @@ static int flash_boot_mode(void)
     return (int)head[2];
 }
 
+/* What tells one S2 from another (the wafer version is "rev" already), for
+ * BUGS.md B1 (WiFi transmit breaks USB on some boards, 2026-11-14..15): eFuse fields (names from esp_efuse_table.h for
+ * the ESP32-S2, ESP-IDF in core 3.3.12) and the flash chip's JEDEC ID, which
+ * names the flash maker in its top byte. Numbers only: what each value means
+ * is in Espressif's ESP32-S2 datasheet and TRM, not checked here. Added
+ * 2026-11-23 so good and failing boards can be compared (Ronny). */
+typedef struct
+{
+    unsigned pkg;
+    unsigned blk_major;
+    unsigned blk_minor;
+    unsigned emb_flash;
+    unsigned emb_psram;
+    unsigned dis_usb;
+    unsigned dis_usb_dl;
+    unsigned usb_exchg;
+    unsigned usb_ext_phy;
+    unsigned vdd_force;
+    unsigned vdd_tieh;
+    unsigned vdd_xpd;
+    uint32_t flash_id;
+    char uid[33];   /* OPTIONAL_UNIQUE_ID, 128 bits as 32 hex digits */
+} chip_ids;
+
+/* One eFuse field of up to 32 bits; 0 when it cannot be read. */
+static unsigned efuse_bits(const esp_efuse_desc_t *field[])
+{
+    uint32_t v = 0;
+    size_t bits = (size_t)esp_efuse_get_field_size(field);
+
+    if (bits == 0u || bits > 32u || esp_efuse_read_field_blob(field, &v, bits) != ESP_OK)
+    {
+        return 0u;
+    }
+    return (unsigned)v;
+}
+
+static void read_chip_ids(chip_ids *ids)
+{
+    uint8_t uid[16] = { 0 };
+
+    memset(ids, 0, sizeof *ids);
+#if CONFIG_IDF_TARGET_ESP32S2
+    ids->pkg = efuse_bits(ESP_EFUSE_PKG_VERSION);
+    ids->blk_major = efuse_bits(ESP_EFUSE_BLK_VERSION_MAJOR);
+    ids->blk_minor = efuse_bits(ESP_EFUSE_BLK_VERSION_MINOR);
+    ids->emb_flash = efuse_bits(ESP_EFUSE_FLASH_VERSION);
+    ids->emb_psram = efuse_bits(ESP_EFUSE_PSRAM_VERSION);
+    ids->dis_usb = efuse_bits(ESP_EFUSE_DIS_USB);
+    ids->dis_usb_dl = efuse_bits(ESP_EFUSE_DIS_USB_DOWNLOAD_MODE);
+    ids->usb_exchg = efuse_bits(ESP_EFUSE_USB_EXCHG_PINS);
+    ids->usb_ext_phy = efuse_bits(ESP_EFUSE_USB_EXT_PHY_ENABLE);
+    ids->vdd_force = efuse_bits(ESP_EFUSE_VDD_SPI_FORCE);
+    ids->vdd_tieh = efuse_bits(ESP_EFUSE_VDD_SPI_TIEH);
+    ids->vdd_xpd = efuse_bits(ESP_EFUSE_VDD_SPI_XPD);
+    (void)esp_efuse_read_field_blob(ESP_EFUSE_OPTIONAL_UNIQUE_ID, uid, 128);
+#endif
+    for (size_t i = 0; i < sizeof uid; i++)
+    {
+        (void)snprintf(&ids->uid[2u * i], 3, "%02X", uid[i]);
+    }
+    if (esp_flash_read_id(NULL, &ids->flash_id) != ESP_OK)
+    {
+        ids->flash_id = 0;
+    }
+}
+
 void board_print_hardware(void (*print)(const char *text))
 {
     /* FlashMode_t order, Esp.h (core 3.3.12). */
@@ -1060,6 +1129,21 @@ void board_print_hardware(void (*print)(const char *text))
                    (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram(),
                    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
     print(text);
+
+    chip_ids ids;
+    read_chip_ids(&ids);
+    (void)snprintf(text, sizeof text,
+                   "Chip IDs: package %u, eFuse block %u.%u, built-in flash %u, built-in PSRAM %u, "
+                   "unique ID %s\r\n",
+                   ids.pkg, ids.blk_major, ids.blk_minor, ids.emb_flash,
+                   ids.emb_psram, ids.uid);
+    print(text);
+    (void)snprintf(text, sizeof text,
+                   "Flash chip ID: %06lX (maker %02lX); USB eFuses: off %u, download off %u, pins swapped %u, "
+                   "external PHY %u; VDD_SPI force %u, tieh %u, xpd %u\r\n",
+                   (unsigned long)ids.flash_id, (unsigned long)(ids.flash_id >> 16), ids.dis_usb,
+                   ids.dis_usb_dl, ids.usb_exchg, ids.usb_ext_phy, ids.vdd_force, ids.vdd_tieh, ids.vdd_xpd);
+    print(text);
 }
 
 int board_hello_hardware(char *out, size_t size)
@@ -1106,6 +1190,26 @@ int board_hello_hardware(char *out, size_t size)
         out[0] = '\0';
         return 0;
     }
+    if (n >= (int)size)
+    {
+        return (int)size - 1;
+    }
+    /* The chip IDs (read_chip_ids): usbfuse is four digits, USB off, USB
+     * download off, pins swapped, external PHY; vddspi three, force, tieh, xpd. */
+    chip_ids ids;
+    read_chip_ids(&ids);
+    int m = snprintf(&out[n], size - (size_t)n,
+                     "pkg=%u\nblkver=%u.%u\nembflash=%u\nembpsram=%u\nuid=%s\nflashid=%06lX\n"
+                     "usbfuse=%u%u%u%u\nvddspi=%u%u%u\n",
+                     ids.pkg, ids.blk_major, ids.blk_minor, ids.emb_flash, ids.emb_psram, ids.uid,
+                     (unsigned long)ids.flash_id, ids.dis_usb, ids.dis_usb_dl, ids.usb_exchg,
+                     ids.usb_ext_phy, ids.vdd_force, ids.vdd_tieh, ids.vdd_xpd);
+    if (m < 0)
+    {
+        out[n] = '\0';
+        return n;
+    }
+    n += m;
     return (n >= (int)size) ? (int)size - 1 : n;
 }
 

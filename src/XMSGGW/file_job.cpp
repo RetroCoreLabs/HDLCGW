@@ -189,8 +189,12 @@ static void cb_done(void *ctx, int result, uint16_t sintran_error)
     j->state = j->released ? FILE_JOB_IDLE : FILE_JOB_ENDED;
     j->released = false;
     portEXIT_CRITICAL(&j->mux);
-    console_out_log(CONTROL_FRAME_LOG_INFO, "%s file job: %s \"%s\" ended, result %d, SINTRAN error %u", j->name,
-                    job_what(j), j->spec, result, (unsigned)sintran_error);
+    /* holes: pages SINTRAN refused as not in the file, sent as zeros (BUGS.md B4, libxmsg
+     * fa3864a); ignored: messages that did not fit the step, should stay 0. */
+    console_out_log(CONTROL_FRAME_LOG_INFO,
+                    "%s file job: %s \"%s\" ended, result %d, SINTRAN error %u, holes %lu, ignored %lu", j->name,
+                    job_what(j), j->spec, result, (unsigned)sintran_error, (unsigned long)j->client->stats.holes,
+                    (unsigned long)j->client->stats.ignored);
 }
 
 /* ------------------------------------------------------------ front end */

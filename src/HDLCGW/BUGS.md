@@ -3,7 +3,7 @@
 Every defect that is known and not fixed at its root is listed here by name, with what was
 measured. A defect leaves this file only when the cause is fixed and a bench run shows it gone.
 
-One open defect: [B1](#b1---a-second-s2-mini-com20-drops-off-usb-under-traffic) (2026-11-14). One known capacity limit, L1 below, kept by Ronny's
+Two open defects: [B1](#b1---a-second-s2-mini-com20-drops-off-usb-under-traffic) (2026-11-14) and [B3](#b3---xmsggw-the-file-command-slot-stayed-busy-after-the-telnet-session-left-not-reproduced) (2026-11-24, not reproduced). One known capacity limit, L1 below, kept by Ronny's
 decision: this phase of the design stops at 307200 bit/s (983000 needs the BUSY signal of the
 PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by the host.
 
@@ -43,6 +43,11 @@ Next: keep the log on during file commands, and on the next stuck slot read the 
 restart.
 
 ## B4 - XMSGGW file reads stop at a page the file does not have (SINTRAN error 18)
+
+**Closed 2026-11-24:** libxmsg fa3864a sends each refused page as 2,048 zero bytes and reads on
+(Ronny's decision: zeros). Bench on D100 over FTP: PLANC-100-F00.PROG arrives as 169,984 bytes,
+blocks 61-63 zeros ("holes 3, ignored 0" in the job's end log line); BIGCOPY.TXT 0 bytes,
+"holes 1"; BIGCOPY3.TXT 12,690 bytes, "holes 0".
 
 Measured 2026-11-24 over FTP (the same file client serves COPY-TERM):
 

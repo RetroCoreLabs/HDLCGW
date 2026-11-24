@@ -56,9 +56,13 @@ So the program file has 3 pages that were never written (holes) and the read sto
 first one; an empty file's first block is a hole as well. Reading: SINTRAN refuses a read of a
 page that is not in the file, and the file client (libxmsg fa_client) ends the whole job on it.
 Error 18 = "page not in the file" is inferred from these four files, not found in a manual
-(none of libxmsg or the NDInsight manuals searched lists it). What a hole should become in the
-copy (zeros, as a local read gives? left out?) is not measured and is Ronny's decision; the
-client code belongs to the libxmsg session.
+(none of libxmsg or the NDInsight manuals searched lists it). What SINTRAN itself does, measured on D100 2026-11-24: `COPY-FILE "HOLETEST:PROG",PLANC-100-F00:PROG`
+gives a copy with the same 80 pages and 169,984 bytes - SINTRAN keeps the holes as holes. D100
+has no FTP server of its own (no TCP-IP user, nothing on port 21), so COSMOS file access is the
+only way in. A PC file cannot hold a hole, so the matching copy is the file's full length with
+2,048 zero bytes for each missing page (Ronny's leaning, 2026-11-24: "I think" zeros). Writing
+such a copy back to SINTRAN would turn the holes into real pages of zeros. The fix is in the file
+client (libxmsg fa_client), the libxmsg session's code.
 
 ## B2 - WiFi stops sending under WIRELESS traffic (first seen as two boards over WiFi)
 

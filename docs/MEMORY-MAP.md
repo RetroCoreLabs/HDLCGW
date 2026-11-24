@@ -3,6 +3,22 @@
 Measured 2026-11-23 on HDLCGW (commit 8d27152 plus the INFO line below), LOLIN S2 Mini,
 ESP32-S2 with 2 MB PSRAM, Arduino-ESP32 core 3.3.12. Why it matters: BUGS.md B2.
 
+<!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
+**Contents**
+
+- [The three kinds of RAM](#the-three-kinds-of-ram)
+- [Measured (PC as TCP peer, WIRELESS ON, 256-byte frames, 120 s)](#measured-pc-as-tcp-peer-wireless-on-256-byte-frames-120-s)
+- [Who uses internal RAM](#who-uses-internal-ram)
+  - [Static (fixed at build time), from xtensa-esp-elf-nm on the built firmware](#static-fixed-at-build-time-from-xtensa-esp-elf-nm-on-the-built-firmware)
+  - [Task stacks (taken from the internal heap at start)](#task-stacks-taken-from-the-internal-heap-at-start)
+  - [Run-time allocations (ours)](#run-time-allocations-ours)
+- [Rules](#rules)
+- [Done 2026-11-23](#done-2026-11-23)
+- [XMSGGW, done 2026-11-23](#xmsggw-done-2026-11-23)
+- [Still open](#still-open)
+
+<!-- /contents -->
+
 ## The three kinds of RAM
 
 | Kind | Size | Who can use it |

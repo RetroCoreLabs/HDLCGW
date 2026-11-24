@@ -10,6 +10,9 @@ PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by
 <!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
 **Contents**
 
+- [B3 - XMSGGW: the file-command slot stayed busy after the telnet session left (not reproduced)](#b3---xmsggw-the-file-command-slot-stayed-busy-after-the-telnet-session-left-not-reproduced)
+- [B4 - XMSGGW FTP: an empty SINTRAN file is refused instead of sent as 0 bytes](#b4---xmsggw-ftp-an-empty-sintran-file-is-refused-instead-of-sent-as-0-bytes)
+- [B2 - WiFi stops sending under WIRELESS traffic (first seen as two boards over WiFi)](#b2---wifi-stops-sending-under-wireless-traffic-first-seen-as-two-boards-over-wifi)
 - [B1 - a second S2 Mini (COM20) drops off USB under traffic](#b1---a-second-s2-mini-com20-drops-off-usb-under-traffic)
 - [The TCP findings of 2026-11-09 (first sustained TCP run 10:42, last fix 12:35)](#the-tcp-findings-of-2026-11-09-first-sustained-tcp-run-1042-last-fix-1235)
   - [L1 (was T1) - whole line frames dropped on the way to the TCP peer when the CPU runs out](#l1-was-t1---whole-line-frames-dropped-on-the-way-to-the-tcp-peer-when-the-cpu-runs-out)
@@ -17,6 +20,35 @@ PCB 3023 MegaLink, not in this phase), and a dropped COMPLETE frame is resent by
   - [T3 - bad frames off the line during TCP traffic (CLOSED 12:35)](#t3---bad-frames-off-the-line-during-tcp-traffic-closed-1235)
 
 <!-- /contents -->
+
+## B3 - XMSGGW: the file-command slot stayed busy after the telnet session left (not reproduced)
+
+Seen 2026-11-24 about 00:38 to 00:55 on the COM10 board (XMSGGW 0.3.5, build Nov 23 18:19:55),
+line through the Pico and the PC window to D100. Every FILE-STAT answered "Another file command
+is running on the gateway; try again." for at least 17 minutes, from fresh telnet sessions, until
+RESET. Before it, several telnet sessions had sent FILE-STAT and closed while it ran (a test
+script that waited 2 minutes per line). The gateway log was OFF, so nothing shows which step
+held it.
+
+After RESET, with the log at level 4, none of these got stuck: a FILE-STAT left to finish; a
+FILE-STAT of every file left after 3 s (log: "cancelled in running, step 7", slot free 0.6 s
+later); the malformed `FILE-STAT D100 (SYSTEM)BIGCOPY:TXT` ("No such file."). Cause unknown.
+
+What the code does (file_console.cpp, file_job.cpp): the slot frees only when the job reaches
+IDLE, and a cancelled job reaches IDLE only when the file client reports done after SINTRAN
+answers the cancel. A cancel that SINTRAN never answers would hold the slot forever; no timeout
+covers that. Not proven to be what happened.
+
+Next: keep the log on during file commands, and on the next stuck slot read the log before any
+restart.
+
+## B4 - XMSGGW FTP: an empty SINTRAN file is refused instead of sent as 0 bytes
+
+Measured 2026-11-24: `RETR BIGCOPY.TXT` and `RETR BIGCOPY2.TXT` (both 0 pages, FILE-STAT) answer
+`550 ... SINTRAN refused it: error 18 (octal 22)`; BIGCOPY3.TXT (12,690 bytes) arrives whole. The
+log shows the file opened ("is 0 bytes, 1 blocks"), then the read request (op 0x0008) refused
+with error 18. What SINTRAN means by error 18 is not looked up yet (no table found in libxmsg or
+the NDInsight manuals searched). Whether to send such a file as 0 bytes is Ronny's decision.
 
 ## B2 - WiFi stops sending under WIRELESS traffic (first seen as two boards over WiFi)
 

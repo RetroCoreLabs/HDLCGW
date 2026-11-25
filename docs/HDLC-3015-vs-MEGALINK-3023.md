@@ -32,6 +32,74 @@ Not checked: that the MAX485 modules and this firmware's timing run cleanly at 3
 firmware sets its transmit speed from a baud value in `src/sync.cpp`; that has not been tested at
 that rate.
 
+## Cable facts (Ronny, 2026-11-25, from the ND-107300 and ND-107340 documentation)
+
+Given by Ronny from the source documents. The 325400 table is an OCR of the cable drawing made
+with ChatGPT; it has not been re-checked against the page image here.
+
+**HDLC, ND-107300 (card 3015), computer link, cable 325402**
+- The computer-link cable 325402 has the straps 3-5, 15-17, 11-24-23 and 22-10.
+- The straps are in BOTH ends of the cable, because both ends connect to an ND HDLC adapter.
+- The gateway board simulates the ND machine at the far end. So the board carries the straps of
+  that one plug only (3-5, 15-17, 11-24-23, 22-10), on the PCB. There is no cable and no second
+  set of straps.
+- Cable 325402, HDLC end to remote end (OCR of the cable drawing made with ChatGPT, given by
+  Ronny on 2026-11-25; not re-checked against the page image here):
+
+| HDLC-end signal | HDLC-end 25P pin | Direction | Remote 25P pin | Remote signal |
+|---|---:|:---:|---:|---|
+| TB | 14 | → | 16 | RB |
+| TA | 2 | → | 4 | RA |
+| CB | 15 | → | 18 | SB |
+| CA | 3 | → | 6 | SA |
+| RB | 16 | ← | 14 | TB |
+| RA | 4 | ← | 2 | TA |
+| IA | 17 | ← | NC | — |
+| IB | 5 | ← | NC | — |
+| SB | 18 | ← | 15 | CB |
+| SA | 6 | ← | 3 | CA |
+| GND | 8 | — | 8 | GND |
+
+Read directly from this table (no interpretation added):
+- Data and clock cross between the two ends on the same pins as cable 325400: 14 to 16, 2 to 4,
+  15 to 18, 3 to 6, and back; 8 to 8.
+- IA (17) and IB (5) are inputs at the HDLC end and are not connected to the remote end (NC).
+- The signals are named with A and B, without + or −. The letter is kept across the cable
+  (TB to RB, CB to SB, CA to SA).
+- Pins 7, 10, 11, 19, 22, 23 and 24 are not in the table.
+
+**MEGALINK, ND-107340 (card 3023), cable 325400**
+- No straps at all. Direct connection.
+- Made for high-speed machine-to-machine links. It cannot be used for X.25 or X.21.
+- Cable 325400, CPU 1 to CPU 2 (OCR):
+
+| CPU 1 signal | CPU 1 DB-25P pin | Direction | CPU 2 DB-25P pin | CPU 2 signal |
+|---|---:|:---:|---:|---|
+| TXD + | 14 | → | 16 | RXD + |
+| TXD − | 2 | → | 4 | RXD − |
+| RXD + | 16 | ← | 14 | TXD + |
+| RXD − | 4 | ← | 2 | TXD − |
+| TXC + | 3 | → | 6 | RXC − |
+| TXC − | 15 | → | 18 | RXC + |
+| RBY + | 5 | ← | 19 | TBY + |
+| RBY − | 17 | ← | 7 | TBY − |
+| RXC + | 18 | ← | 15 | TXC − |
+| RXC − | 6 | ← | 3 | TXC + |
+| TBY + | 19 | → | 5 | RBY + |
+| TBY − | 7 | → | 17 | RBY − |
+| GND | 8 | — | 8 | GND |
+
+Read directly from this table (no interpretation added):
+- Busy: TBY (19 +, 7 −) is an output of each ND; RBY (5 +, 17 −) is an input. Each machine's TBY
+  goes to the other machine's RBY.
+- Data keeps its polarity across the cable: TXD + to RXD +, TXD − to RXD −.
+- The clock pair changes polarity across the cable: TXC + (3) goes to RXC − (6), and TXC − (15)
+  goes to RXC + (18).
+
+**Two board modes follow from this** (Ronny, 2026-11-25):
+1. HDLC link (3015), no busy, about 300 kbit/s: data, clock and the 325402 plug straps.
+2. MEGALINK link (3023), with busy, up to about 1000 kbit/s: data, clock and busy, no straps.
+
 ## Short answer
 
 Your assumption is half right.
@@ -46,7 +114,7 @@ Your assumption is half right.
 | Item | HDLC, 3015 (ND-107300) | MEGALINK, 3023 (ND-107340) |
 |---|---|---|
 | Card part number | 322615 | 322623 |
-| Purpose | Single-line serial interface to a modem, a data network or a computer link | Special computer-to-computer link between ND-110 and ND-110, or ND-110 and N-10 |
+| Purpose | Single-line serial interface to a modem, a data network or a computer link | Special computer-to-computer link between ND-110 and ND-110, or ND-110 and N-10. High-speed machine-to-machine only; cannot be used for X.25 or X.21 (Ronny, 2026-11-25) |
 | Line types | V.24/V.28 modem, X.21/X.27, computer link, V.36/V.11 (64 kbit/s), V.35 on request | Computer link only, balanced RS-422 drivers and receivers |
 | Top speed | 307 kbps in computer link | 983 kbps |
 | Who it can talk to | not stated on the pages read | "A MEGALINK interface can only communicate with another MEGALINK interface" |
@@ -54,8 +122,8 @@ Your assumption is half right.
 | Signals on the 25-pin plug | TB/TA (14, 2), CB/CA (15, 3), RB/RA (16, 4), IA/IB (17, 5), SB/SA (18, 6), GND (8) | TXD (14, 2), TXC (15, 3), RXD (16, 4), RBY (17, 5), RXC (18, 6), TBY (19, 7), GND (8) |
 | Busy signals | none. The I pair (17, 5) is "indication" | RBY input on 5 and 17, TBY output on 19 and 7 |
 | Cable between two machines | 325402 | 325400 (325440 to an N-10) |
-| What the cable crosses | 14 to 16, 2 to 4, 15 to 18, 3 to 6, 8 to 8. Pins 5 and 17 are not in the cable | the same, plus 19 to 5 and 7 to 17 |
-| Straps in each plug | 3-5, 15-17, 11-24-23, 22-10 | none listed |
+| What the cable crosses | 14 to 16, 2 to 4, 15 to 18, 3 to 6, 8 to 8. Pins 5 and 17 are not in the cable | 14 to 16, 2 to 4, 3 to 6, 15 to 18, 19 to 5, 7 to 17, 8 to 8 (325400 table above) |
+| Straps in each plug | 3-5, 15-17, 11-24-23, 22-10, in BOTH plugs of cable 325402 (Ronny, 2026-11-25) | none: direct connection (Ronny, 2026-11-25) |
 | Switch 13A | line type (computer link is 4-3-2-1 = XX OFF OFF ON), autoload connection | busy on or off: XX XX OFF ON = busy enabled, XX XX ON OFF = busy disabled |
 | Switch 26G | 4 switches: oscillators on or off | 6 switches: clock source (983 kbps, or baud from thumbwheel 1, or 614.4 kbps), processor clock, oscillator test |
 | Baud thumbwheel (TH1) | 0 = 307.2, 3 = 1.2, 6 = 9.6, 7 = 38.4, 8 = 153.6, 9 = 76.8 (recommended in computer link), 11 = 19.2, 13 = 4.8, 14 = 2.4 kbps | the same table, used only if 26G selects "baud via TH1" |
@@ -80,9 +148,10 @@ Only the pins 5, 17, 19, 7 (and the straps on 10, 11, 22, 23, 24) change role.
 ## What this means for the Pico board
 
 - The same four modules (data in, data out, clock in, clock out) serve both cards.
-- For the HDLC card the board needs the straps 3-5, 15-17, 11-24-23, 22-10.
-- For the MEGALINK card the straps are not listed. Pins 5 and 17 must not be strapped to 3 and 15
-  there: they would then be fed by the ND's own clock instead of a busy signal.
+- For the HDLC card the board simulates the ND at the far end, so it carries the straps of that
+  one plug: 3-5, 15-17, 11-24-23, 22-10 (cable 325402, Ronny 2026-11-25).
+- For the MEGALINK card there are no straps (cable 325400, direct connection, Ronny 2026-11-25).
+  Pins 5 and 17 are the ND's RBY input and are wired to the other machine's TBY output.
 - Your slide 3 shows busy disabled on the 3023 (switch 13A). With busy disabled the MEGALINK should
   not need the RBY signal. That is what the manual's switch table says; whether it behaves so on
   your machine is not verified.
@@ -104,6 +173,7 @@ pinout of your female DB-25 connector" in HDLC-Cable-Measurements.md (assumption
 
 Evidence: the MEGALINK cable table (section 2-22 page 5 of 5) has TBY+ on 19 and TBY- on 7 (ND
 output), RBY+ on 5 and RBY- on 17 (ND input). The board is the other end, so:
+(The 325400 OCR table given by Ronny on 2026-11-25 shows the same: TBY 19/7 → RBY 5/17.)
 
 | Direction | Pins | Module | What it does |
 |---|---|---|---|
@@ -134,7 +204,9 @@ Not stated on the pages read: which level means busy, and what the ND does when 
 
 - That the HDLC frame timing and the frame content are identical on both cards. The pages only
   say HDLC in hardware.
-- What the straps on pins 10, 11, 22, 23 and 24 do, and whether they harm a MEGALINK.
+- What the 325402 straps (3-5, 15-17, 11-24-23, 22-10) do. Not written on the pages read. They are
+  not used with a MEGALINK: cable 325400 has no straps.
+- The 325400 table above is a ChatGPT OCR of the cable drawing, not re-checked against the page.
 - Whether the firmware in this repository handles busy signals at all (not checked).
 - The 3015 switch table has duplicated rows in the scan for V.35, V.24, X.21 bis and X.25. Only
   the computer-link row (13A 4-3-2-1 = XX OFF OFF ON) is quoted here.

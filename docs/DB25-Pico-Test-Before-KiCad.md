@@ -65,11 +65,33 @@ What that means in practice:
 | Strap 15-17 | 15, 17 | 24, 22 |
 | Strap 11-24-23 | 11, 24, 23 | 3, 15, 16 |
 | Strap 22-10 | 22, 10 | 17, 4 |
-| Busy lines (MegaLink 3023 only, NOT used) | 5/17 in, 19/7 out | - |
+| Busy INTO the ND, plus (RBY+), MEGALINK only | 5 | 9 |
+| Busy INTO the ND, minus (RBY-), MEGALINK only | 17 | 22 |
+| Busy OUT of the ND, plus (TBY+), MEGALINK only | 19 | 20 |
+| Busy OUT of the ND, minus (TBY-), MEGALINK only | 7 | 7 |
+
+Watch out: printed 22 is real 17 (busy), and printed 17 is real 22 (strap). Real 7 is printed 7.
+
+All 25 pins, from the formula above (printed = 14 - real for real 1 to 13, printed = 39 - real
+for real 14 to 25):
+
+| Real | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Printed | 13 | 12 | 11 | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 |
+
+| Real | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Printed | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 |
+
+**PCB (straight plug into the ND): use the Real column. Breadboard through the flipped cable:
+use the Printed column.** The PCB has no cable, so it has no flip.
 
 Signal names and signs come from the ND Service Handbook (3023 MegaLink table, section 2-22,
 page 5 of 5). The 3015 HDLC card uses the same data and clock pins (section 2-20, page 7 of 8),
 but its table gives no plus or minus signs; that the signs are the same there is **not verified**.
+The OCR tables of cables 325402 (HDLC) and 325400 (MEGALINK), given by Ronny on 2026-11-25, are in
+`HDLC-3015-vs-MEGALINK-3023.md`. Both cross data and clock on the same pins (14-16, 2-4, 15-18,
+3-6).
 
 **Rule for the whole test:** write down every number as a REAL ND number, and say "printed"
 whenever you mean the number on the breakout. Mixing the two is how this went wrong before.
@@ -120,13 +142,17 @@ The ND-to-ND cable in the manual crosses the clock (pin 3 to 6, 15 to 18), so wi
 the Pico listens the way a second ND would. With RC422Dev reading on the rising edge of GP17,
 the Pico then samples on the falling edge of the ND's clock plus. Whether that is the right
 edge is what step 7 measures. If frames from the ND fail, swapping the two clock wires on U2
-pins 7 and 8 is the first thing to try. A swapped pair does no damage.
+pins 7 and 8 is the first thing to try. A swapped pair does no damage. The same can be done in
+firmware without touching a wire: see step 7.
+(The cable OCR tables in `HDLC-3015-vs-MEGALINK-3023.md` show this crossing for both cables:
+15 to 18 and 3 to 6.)
 
 **The straps** (3-5, 15-17, 11-24-23, 22-10) are the 3015 card's computer-link straps in the
 cable plug. What they do is not written in the pages read so far (`kicad/todo.md` item 5).
 Leave them as wire links you can pull out, and run step 6 with and without them.
 
-Nothing else on the plug is connected: real pins 1, 7, 9, 12, 13, 19, 20, 21, 25 (board netlist).
+Nothing else on the plug is connected in this HDLC test: real pins 1, 7, 9, 12, 13, 19, 20, 21,
+25 (printed 13, 7, 5, 2, 1, 20, 19, 18, 14). For the MEGALINK test with busy, see section 10.
 
 ## 4. Checks before anything is powered
 
@@ -187,12 +213,43 @@ If the Pico sees nothing, or only bad frames:
 - swap the clock pair on U2 pins 7 and 8 (this is the A4 assumption);
 - then swap the data pair on U1 pins 7 and 8;
 - one change at a time, re-run, write down each result.
+- Instead of swapping wires, the clock edges can be changed in firmware (step 7).
 
 ## 7. Test 3 - measure the clock edge (settles assumption A4)
 
-With the ND sending: logic analyser on real pin 14 (data plus) and real pin 3 (clock plus),
-ground on 8. Look at which clock edge the data changes on. The data must be steady at the edge
-the Pico reads. Write down: "data changes on the rising / falling edge of pin 3".
+The clock edges are a firmware setting, not a wiring question. There are only four
+combinations, and each direction can be tested on its own:
+
+| Direction | Proven when | Firmware setting |
+|---|---|---|
+| Receive (ND to us) | frames from the ND arrive with bad CRC 0, odd bits 0 | which edge of the receive clock the data is read on |
+| Transmit (us to ND) | the ND accepts our frames and stops resending | which edge of the transmit clock the data changes on |
+
+Where the setting is:
+- ESP32-S2 firmware (read 2026-11-25): both directions use SPI mode 0.
+  - Receive: `src/external/libxmsg/src/libhdlc/esp32s2/spi_rx_task.c` line 80,
+    `#define RX_SPI_MODE 0`, applied at line 292. Data is read on the rising edge of GPIO 12.
+    Line 275, `esp_rom_gpio_connect_in_signal(PIN_RX_CLOCK, SPI3_CLK_IN_IDX, false)`: `true`
+    inverts the receive clock in the GPIO matrix.
+  - Transmit: `src/external/libxmsg/src/libhdlc/esp32s2/spi_tx_task.c` line 249, `dev.mode = 0`.
+    Data changes on the falling edge of GPIO 7 and is steady on the rising edge. Mode 1 swaps
+    that.
+- Pico (RC422Dev): reads on the rising edge of GP17 (section 3 note). Where the transmit edge
+  is set in RC422Dev is **not checked**.
+
+**The rule: "works" must mean "works with margin".** If we read on the same edge on which the
+data changes, we read exactly while the data switches. That can pass at 307200 on a short
+bench wire and still fail at 983000, with a longer connection, or warm. The right edge reads in
+the middle of each bit. So:
+1. Find a setting that works at 307200.
+2. Run it at the highest rate you will use (983000 for MEGALINK), with 4105-byte frames, for
+   at least 10 minutes. Bad CRC must stay 0.
+3. If it only works at the low rate, change the edge of that direction and repeat.
+
+**With a scope or logic analyser (the quickest proof):** with the ND sending, probe real pin 14
+(data plus) and real pin 3 (clock plus), ground on 8. Through the flipped cable that is printed
+25, printed 11 and printed 6. Look at which clock edge the data changes on. The data must be
+steady at the edge we read. Write down: "data changes on the rising / falling edge of pin 3".
 Also measure the clock rate on pin 3 (expected 307200 Hz if the ND clock is set to that;
 **not verified**).
 
@@ -213,6 +270,8 @@ Also measure the clock rate on pin 3 (expected 307200 Hz if the ND clock is set 
 | 6 pairs swapped (which, and did it help) | | |
 | 7 data changes on which edge of pin 3 | | |
 | 7 clock rate on pin 3 | | |
+| 7 receive edge setting that works, and at which top rate, how long | | |
+| 7 transmit edge setting that works, and at which top rate, how long | | |
 
 ## 9. Done means: ready for the KiCad layout
 
@@ -227,6 +286,93 @@ The connection is proved, and the board can be laid out, when:
 
 Then update `kicad/todo.md` items 4 (clock pins) and 5 (straps) with the results, and carry
 any wiring change into the schematic before the PCB is started.
+
+## 10. Test 4 - MEGALINK card 3023 with busy signals
+
+For the MEGALINK (ND-107340, card 3023) up to about 983 kbit/s. Facts used here, and where they
+come from:
+- No straps on a MEGALINK: cable 325400 is a direct connection (Ronny, 2026-11-25).
+- Busy pins and directions: cable 325400 OCR table in `HDLC-3015-vs-MEGALINK-3023.md`. TBY
+  (19 +, 7 -) is an output of the ND, RBY (5 +, 17 -) is an input. Each machine's TBY goes to
+  the other machine's RBY.
+- Switch 13A on the 3023: XX XX OFF ON = busy enabled, XX XX ON OFF = busy disabled, and the
+  26G switches choose the clock source (983 kbit/s, thumbwheel, 614.4 kbit/s). From
+  `HDLC-3015-vs-MEGALINK-3023.md`; the 26G switch positions for each source are not written
+  there.
+- Which level means "busy", and what the ND does when it sees RBY: **not written in anything
+  read so far**. This test finds out.
+
+### 10.1 What changes from the HDLC test
+
+- **Remove all four strap links** (3-5, 15-17, 11-24-23, 22-10). On the PCB: DIP switch SW1,
+  positions 1 to 5, all OFF.
+- Data and clock: exactly as section 3 (U1, U2), same pins.
+- A third MAX3490E (U3) for busy, with its own 100 nF capacitor:
+
+| Chip | Chip pin | Goes to | Real ND pin | Printed (flipped cable) |
+|---|---|---|---|---|
+| U3 (busy) | 3 DI | MCU busy out | - | - |
+| U3 | 2 RO | MCU busy in | - | - |
+| U3 | 5 Y | busy INTO the ND, plus (RBY+) | 5 | 9 |
+| U3 | 6 Z | busy INTO the ND, minus (RBY-) | 17 | 22 |
+| U3 | 8 A | busy OUT of the ND, plus (TBY+) | 19 | 20 |
+| U3 | 7 B | busy OUT of the ND, minus (TBY-) | 7 | 7 |
+| U3 | 1 VCC, 4 GND | 3V3, GND | - | - |
+
+MCU pins for busy:
+- PCB (schematic `HDLCGateway.kicad_sch`, WEMOS S3 mini since 2026-11-25): GPIO 8 -> U3 DI,
+  U3 RO -> GPIO 7. With an S2 mini in the same holes: GPIO 10 -> U3 DI, U3 RO -> GPIO 8.
+  On the PCB, DIP switch SW2 positions 1 to 4 (all ON) connect U3 to plug pins 5, 17, 19 and 7.
+- Pico breadboard: no pins chosen. Whether RC422Dev has any busy support is **not checked**.
+- Firmware that drives or reads the busy pins: **not written yet** on the ESP32-S2.
+
+Not connected in this test: real 1, 9, 10, 11, 12, 13, 20, 21, 22, 23, 24, 25
+(printed 13, 5, 4, 3, 2, 1, 19, 18, 17, 16, 15, 14).
+
+### 10.2 Checks before anything is powered
+
+Everything in section 4, and also:
+1. **Straps really out:** these must NOT beep: real 3-5 (printed 11-9), 15-17 (24-22),
+   11-24 and 24-23 (3-15 and 15-16), 22-10 (17-4).
+2. **No short inside a busy pair:** 5-17 (printed 9-22) and 19-7 (printed 20-7) must NOT beep.
+3. **Each U3 pin to its plug pin**, every row of the table in 10.1.
+
+### 10.3 Loop plug, no ND
+
+1. Loop plug as in step 5.2 for data and clock, plus busy, keeping plus to plus:
+   real 5 to 19 and 17 to 7 (through the flipped cable: printed 9 to 20 and 22 to 7).
+2. Set the MCU's busy out high, then low. Busy in must follow. (Needs a console command or test
+   build that sets and reads the busy pins; none exists yet.)
+3. Traffic test as step 5.3 at 307200, then at 983000 with 4105-byte frames, with the
+   margin rule from step 7.
+
+### 10.4 Against the real 3023
+
+1. ND: switch 13A = XX XX OFF ON (busy enabled). Set 26G for the clock you want. Write down
+   exactly how 13A and 26G were set.
+2. Watch the ND's TBY (real 19 against 7; printed 20 against 7), or the MCU's busy in, while the
+   ND is idle and while it sends. Write down which level appears when.
+3. Hold our busy out (RBY at the ND, real 5/17) at one level, then the other. Write down at
+   which level the ND sends and at which it stops. That gives the meaning of the busy level.
+4. Run traffic at 307200, then at 983000. Good looks like section 6.4, with bad CRC 0 at the top
+   rate (step 7 rule).
+5. **Same run with busy disabled** (13A = XX XX ON OFF), U3 still connected. Does the link work
+   at 307200 without busy? At 983000? This answers whether busy is needed only for the high
+   rate (Ronny's statement, not yet checked).
+
+### 10.5 Results to fill in
+
+| Check | Result | Date |
+|---|---|---|
+| 10.2 straps out, busy pairs not shorted, U3 pins to plug pins | | |
+| 10.3 busy loop: out high -> in high, out low -> in low | | |
+| 10.3 loop plug traffic at 307200 / 983000 | sent / received / bad | |
+| 10.4.1 how 13A and 26G were set | | |
+| 10.4.2 TBY level when ND idle / when ND sends | | |
+| 10.4.3 RBY level at which the ND stops sending | | |
+| 10.4.4 traffic with busy enabled, 307200 / 983000 | frames seen / good / bad | |
+| 10.4.5 traffic with busy disabled, 307200 / 983000 | frames seen / good / bad | |
+| 10.4 receive and transmit edge settings used | | |
 
 ## Related documents
 

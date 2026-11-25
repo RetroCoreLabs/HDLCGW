@@ -56,6 +56,13 @@ GUIDES = [
 ]
 BUGS = 'src/HDLCGW/BUGS.md'
 
+# The interactive BOM pages copied to the site from docs/ibom/, with their menu titles. The menu
+# links them by their live address: they are plain HTML files, not pages MkDocs builds.
+SITE_URL = 'https://retrocorelabs.github.io/HDLCGW/'
+IBOMS = [
+    ('docs/ibom/HDLCGateway-ibom.html', 'Interactive BOM (HDLCGateway board)'),
+]
+
 # Headers of the two sketches only; the libraries under src/external have their own site.
 def headers_of_sketches():
     return [p for folder, _ in LIBRARIES for p in tracked(folder + '/*.h')]
@@ -564,10 +571,13 @@ def main():
     if 'src/docs-site/flash/index.md' in flash:
         y.append('  - Flash from the browser: flash/index.md')
     guide_pages = [(p, t) for p, t in GUIDES if p in guides]
-    if guide_pages:
+    ibom_pages = [(p, t) for p, t in IBOMS if p in set(tracked('docs/ibom/*.html'))]
+    if guide_pages or ibom_pages:
         y.append('  - Guides:')
         for p, t in guide_pages:
             y.append('      - "%s": %s' % (t, p))
+        for p, t in ibom_pages:
+            y.append('      - "%s": %s%s' % (t, SITE_URL, p))
     y.append('  - API:')
     for label, group in nav_api:
         y.append('      - %s:' % label)

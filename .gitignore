@@ -9,3 +9,5 @@ Backup-*.zip
 build-site/
 __pycache__/
 src/HDLCGW/CLAUDE.md
+# FreeCAD automatic backups
+*.FCBak

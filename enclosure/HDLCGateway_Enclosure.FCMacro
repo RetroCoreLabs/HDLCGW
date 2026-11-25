@@ -1,0 +1,304 @@
+# -*- coding: utf-8 -*-
+# HDLCGateway enclosure, v1 - parametric FreeCAD macro (FreeCAD 0.21 / 1.0, Part workbench).
+#
+# Run: FreeCAD -> Macro -> Macros... -> select this file -> Execute
+#      (or open it in the macro editor and press Run).
+#
+# What it builds (new document "HDLCGateway_Enclosure"):
+#   Params        spreadsheet with every dimension (edit a cell, then Recompute: the model follows)
+#   Base          floor, walls up to the PCB top, 3 standoffs (M3 heat-set inserts), 2 support
+#                 rings under the DB-25 board-lock holes
+#   Lid           top plate, walls from the PCB top up, 3 screw bosses that clamp the PCB,
+#                 DB-25 flange window, DIP-switch window, USB-C opening, engraved text
+#   Board         KiCad STEP of the real PCB (HDLCGateway-board.step), for checking the fit
+# It saves HDLCGateway_Enclosure.FCStd and exports Base.stl / Lid.stl next to this macro's
+# OUT_DIR, and prints an interference check (enclosure vs board STEP) to the Report view.
+#
+# Frame (same as the board STEP): X = board X (left edge 0, right edge with USB-C 61.84),
+# Y = 0 at the DB-25 (front) edge, +Y toward the back; Z = 0 at the PCB underside,
+# PCB top at Z = 1.6. The DB-25 points to -Y.
+#
+# Values marked VERIFY in the sheet come from KiCad stock 3D models or estimates, not from the
+# real parts. Measure the real DB-25 and module and correct those cells before printing.
+
+import os
+import FreeCAD as App
+import Part
+
+OUT_DIR = r"C:\Users\ronny\OneDrive\Documents\Vector\2026-11-24_15-50-40\enclosure"
+BOARD_STEP = os.path.join(OUT_DIR, "HDLCGateway-board.step")
+FONT_CANDIDATES = [r"C:\Windows\Fonts\arial.ttf", r"C:\Windows\Fonts\segoeui.ttf",
+                   "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+
+# (alias, value or formula, note). Formulas start with "=" and may use the aliases above them.
+PARAMS = [
+    # --- PCB, measured from HDLCGateway.kicad_pcb (KiCad 9, 2026-11-25) ---
+    ("pcb_w", 61.84, "PCB width (X)"),
+    ("pcb_d", 61.84, "PCB depth (Y)"),
+    ("pcb_t", 1.6, "PCB thickness"),
+    ("h1_x", 3.6, "H1 top-left hole"), ("h1_y", 58.24, ""),
+    ("h2_x", 58.2, "H2 top-right hole"), ("h2_y", 58.24, ""),
+    ("h3_x", 3.6, "H3 hole beside the DB-25"), ("h3_y", 3.64, ""),
+    ("lock1_x", 11.7, "DB-25 board-lock hole, left"),
+    ("lock2_x", 58.74, "DB-25 board-lock hole, right"),
+    ("lock_y", 9.12, "DB-25 board-lock holes, Y"),
+    ("flange_x0", 8.62, "DB-25 flange left end (footprint)"),
+    ("flange_x1", 61.82, "DB-25 flange right end (footprint)"),
+    ("flange_rear", 0.33, "flange rear face in front of the PCB edge (footprint, XUNPU drawing)"),
+    ("flange_t", 0.5, "flange thickness (footprint)"),
+    ("flange_top", 12.45, "VERIFY flange top above PCB top (KiCad stock model)"),
+    ("sw_x0", 30.0, "DIP-switch window, from SW2/SW1 outlines + 0.5"),
+    ("sw_x1", 57.0, ""), ("sw_y0", 12.54, ""), ("sw_y1", 25.14, ""),
+    ("usb_y", 40.29, "USB-C centre Y (module outline centre)"),
+    ("usb_zc", 6.7, "VERIFY USB-C centre Z: PCB 1.6 + spacer 2.5 + module 1.0 + half receptacle 1.6"),
+    ("usb_w", 12.0, "USB-C opening width (cable overmould)"),
+    ("usb_h", 7.0, "USB-C opening height"),
+    # --- enclosure design values ---
+    ("wall", 2.0, "side and back wall thickness"),
+    ("floor_t", 2.0, "floor thickness"),
+    ("lid_t", 2.0, "lid plate thickness"),
+    ("clr", 0.4, "gap PCB edge to wall"),
+    ("under", 2.0, "floor top to PCB underside: pins trimmed to about 1 mm after soldering, plus 1 mm"),
+    ("top_clr", 0.3, "gap flange top to lid underside"),
+    ("front_t", 1.6, "front wall thickness above the PCB (beside the flange)"),
+    ("front_low_t", 2.0, "front wall thickness below the PCB"),
+    ("front_gap", 0.2, "gap PCB front edge to the thin front strip"),
+    ("fl_clr", 0.15, "clearance around the flange in its window"),
+    ("so_od", 7.0, "standoff / boss outer diameter"),
+    ("insert_d", 4.0, "M3 heat-set insert hole diameter"),
+    ("insert_depth", 3.4, "insert hole depth from the standoff top (short M3 x 3 inserts)"),
+    ("screw_d", 3.4, "M3 clearance hole"),
+    ("cb_d", 6.2, "counterbore for the M3 screw head"),
+    ("cb_depth", 3.0, "counterbore depth"),
+    ("ring_od", 7.4, "support ring under a DB-25 board lock, outer (merges into the right wall)"),
+    ("ring_id", 4.6, "support ring bore (room for a board-lock peg)"),
+    ("engrave", 0.5, "text depth in the lid"),
+    ("strip_drop", 0.25, "front strip under the flange sits this much below the PCB top"),
+    # --- derived ---
+    ("front_y", "=-(flange_rear + flange_t)", "front face = flange front face"),
+    ("x_min", "=-(clr + wall)", ""),
+    ("x_max", "=pcb_w + clr + wall", ""),
+    ("y_min", "=front_y", ""),
+    ("y_max", "=pcb_d + clr + wall", ""),
+    ("z_bot", "=-(under + floor_t)", "underside of the floor"),
+    ("z_top", "=pcb_t + flange_top + top_clr + lid_t", "top of the lid"),
+    ("split_z", "=pcb_t", "base / lid split height"),
+    ("outer_w", "=x_max - x_min", "outside width"),
+    ("outer_d", "=y_max - y_min", "outside depth"),
+    ("outer_h", "=z_top - z_bot", "outside height"),
+]
+
+doc = App.newDocument("HDLCGateway_Enclosure")
+sheet = doc.addObject("Spreadsheet::Sheet", "Params")
+sheet.set("A1", "alias")
+sheet.set("B1", "value")
+sheet.set("C1", "note")
+for row, (alias, value, note) in enumerate(PARAMS, start=2):
+    sheet.set("A%d" % row, alias)
+    sheet.set("B%d" % row, value if isinstance(value, str) else str(value))
+    sheet.setAlias("B%d" % row, alias)
+    if note:
+        sheet.set("C%d" % row, note)
+doc.recompute()
+
+
+def expr(value):
+    """A number stays a number; a string is an expression over the sheet aliases."""
+    if isinstance(value, str):
+        out = value
+        for alias, _, _ in sorted(PARAMS, key=lambda p: -len(p[0])):
+            out = out.replace("{%s}" % alias, "Params.%s" % alias)
+        return out
+    return None
+
+
+def bind(obj, prop, value):
+    e = expr(value)
+    if e is None:
+        obj.setExpression(prop, None)
+        parts = prop.split(".")
+        if parts[0] == "Placement":
+            base = obj.Placement.Base
+            setattr(base, parts[2], float(value))
+            obj.Placement = App.Placement(base, obj.Placement.Rotation)
+        else:
+            setattr(obj, prop, float(value))
+    else:
+        obj.setExpression(prop, e)
+
+
+def box(name, x, y, z, length, width, height):
+    obj = doc.addObject("Part::Box", name)
+    for prop, value in (("Length", length), ("Width", width), ("Height", height),
+                        ("Placement.Base.x", x), ("Placement.Base.y", y), ("Placement.Base.z", z)):
+        bind(obj, prop, value)
+    return obj
+
+
+def cyl(name, x, y, z, radius, height):
+    obj = doc.addObject("Part::Cylinder", name)
+    for prop, value in (("Radius", radius), ("Height", height),
+                        ("Placement.Base.x", x), ("Placement.Base.y", y), ("Placement.Base.z", z)):
+        bind(obj, prop, value)
+    return obj
+
+
+def fuse(name, objs):
+    obj = doc.addObject("Part::MultiFuse", name)
+    obj.Shapes = objs
+    for o in objs:
+        if o.ViewObject:
+            o.ViewObject.Visibility = False
+    return obj
+
+
+def cut(name, base, tool):
+    obj = doc.addObject("Part::Cut", name)
+    obj.Base = base
+    obj.Tool = tool
+    for o in (base, tool):
+        if o.ViewObject:
+            o.ViewObject.Visibility = False
+    return obj
+
+
+holes = [("{h1_x}", "{h1_y}"), ("{h2_x}", "{h2_y}"), ("{h3_x}", "{h3_y}")]
+locks = [("{lock1_x}", "{lock_y}"), ("{lock2_x}", "{lock_y}")]
+
+# ---------------- Base ----------------
+base_parts = [
+    box("B_floor", "{x_min}", "{y_min}", "{z_bot}", "{outer_w}", "{outer_d}", "{floor_t}"),
+    box("B_wall_left", "{x_min}", "{y_min}", "{z_bot}", "{wall}", "{outer_d}", "{split_z} - {z_bot}"),
+    box("B_wall_right", "{x_max} - {wall}", "{y_min}", "{z_bot}", "{wall}", "{outer_d}", "{split_z} - {z_bot}"),
+    box("B_wall_back", "{x_min}", "{y_max} - {wall}", "{z_bot}", "{outer_w}", "{wall}", "{split_z} - {z_bot}"),
+    box("B_front_low", "{x_min}", "{y_min}", "{z_bot}", "{outer_w}", "{front_low_t}", "-{z_bot}"),
+    box("B_front_strip", "{x_min}", "{y_min}", 0, "{outer_w}", "-{front_gap} - {y_min}", "{pcb_t} - {strip_drop}"),
+]
+for i, (x, y) in enumerate(holes, start=1):
+    base_parts.append(cyl("B_standoff_H%d" % i, x, y, "-{under} - 0.01", "{so_od} / 2", "{under} + 0.01"))
+for i, (x, y) in enumerate(locks, start=1):
+    base_parts.append(cyl("B_lock_ring_%d" % i, x, y, "-{under} - 0.01", "{ring_od} / 2", "{under} + 0.01"))
+base_cutters = []
+for i, (x, y) in enumerate(holes, start=1):
+    base_cutters.append(cyl("B_insert_H%d" % i, x, y, "-{insert_depth}", "{insert_d} / 2", "{insert_depth} + 0.1"))
+for i, (x, y) in enumerate(locks, start=1):
+    base_cutters.append(cyl("B_lock_bore_%d" % i, x, y, "-{under}", "{ring_id} / 2", "{under} + 0.1"))
+    base_cutters.append(cyl("B_lock_floor_hole_%d" % i, x, y, "{z_bot} - 0.1", "{screw_d} / 2", "{floor_t} + 0.2"))
+base = cut("Base", fuse("Base_solid", base_parts), fuse("Base_cutters", base_cutters))
+
+# ---------------- Lid ----------------
+lid_parts = [
+    box("L_plate", "{x_min}", "{y_min}", "{z_top} - {lid_t}", "{outer_w}", "{outer_d}", "{lid_t}"),
+    box("L_wall_left", "{x_min}", "{y_min}", "{split_z}", "{wall}", "{outer_d}", "{z_top} - {split_z}"),
+    box("L_wall_right", "{x_max} - {wall}", "{y_min}", "{split_z}", "{wall}", "{outer_d}", "{z_top} - {split_z}"),
+    box("L_wall_back", "{x_min}", "{y_max} - {wall}", "{split_z}", "{outer_w}", "{wall}", "{z_top} - {split_z}"),
+    box("L_wall_front", "{x_min}", "{y_min}", "{split_z}", "{outer_w}", "{front_t}", "{z_top} - {split_z}"),
+]
+for i, (x, y) in enumerate(holes, start=1):
+    lid_parts.append(cyl("L_boss_H%d" % i, x, y, "{pcb_t}", "{so_od} / 2", "{z_top} - {lid_t} - {pcb_t} + 0.01"))
+lid_cutters = [
+    box("L_flange_window", "{flange_x0} - {fl_clr}", "{y_min} - 1", "{split_z} - 0.1",
+        "{flange_x1} - {flange_x0} + 2 * {fl_clr}", "{front_t} + 2",
+        "{pcb_t} + {flange_top} + {fl_clr} - {split_z} + 0.1"),
+    box("L_dip_window", "{sw_x0}", "{sw_y0}", "{z_top} - {lid_t} - 0.1",
+        "{sw_x1} - {sw_x0}", "{sw_y1} - {sw_y0}", "{lid_t} + 0.2"),
+    box("L_usb_opening", "{x_max} - {wall} - 0.5", "{usb_y} - {usb_w} / 2", "{usb_zc} - {usb_h} / 2",
+        "{wall} + 1", "{usb_w}", "{usb_h}"),
+]
+for i, (x, y) in enumerate(holes, start=1):
+    lid_cutters.append(cyl("L_screw_H%d" % i, x, y, "{pcb_t} - 0.1", "{screw_d} / 2", "{z_top} - {pcb_t} + 0.2"))
+    lid_cutters.append(cyl("L_counterbore_H%d" % i, x, y, "{z_top} - {cb_depth}", "{cb_d} / 2", "{cb_depth} + 0.1"))
+
+# Engraved text on the lid top (skipped with a message if Draft or a font is missing).
+TEXTS = [  # (string, x, y, size)
+    ('HDLC Gateway', 4.0, 46.0, 5.0),
+    ('RetroCoreLabs', 4.0, 39.5, 3.0),
+    ('SW2 MEGALINK', 26.4, 29.4, 1.8),
+    ('SW1 HDLC', 43.4, 26.4, 1.8),
+    ('HDLC 3015: SW1 ON, SW2 OFF', 9.0, 8.0, 2.2),
+    ('MEGALINK 3023: SW1 OFF, SW2 ON', 9.0, 4.0, 2.2),
+]
+font = next((f for f in FONT_CANDIDATES if os.path.exists(f)), None)
+try:
+    import Draft
+    if font is None:
+        raise RuntimeError("no font file found")
+    for i, (s, x, y, size) in enumerate(TEXTS, start=1):
+        ss = Draft.make_shapestring(String=s, FontFile=font, Size=size, Tracking=0)
+        ss.Label = "Text_%d" % i
+        bind(ss, "Placement.Base.x", x)
+        bind(ss, "Placement.Base.y", y)
+        bind(ss, "Placement.Base.z", "{z_top} - {engrave}")
+        ext = doc.addObject("Part::Extrusion", "L_text_%d" % i)
+        ext.Base = ss
+        ext.DirMode = "Custom"
+        ext.Dir = App.Vector(0, 0, 1)
+        ext.setExpression("LengthFwd", "Params.engrave + 0.2")
+        ext.Solid = True
+        if ss.ViewObject:
+            ss.ViewObject.Visibility = False
+        lid_cutters.append(ext)
+except Exception as error:
+    App.Console.PrintWarning("Text not engraved: %s\n" % error)
+
+lid = cut("Lid", fuse("Lid_solid", lid_parts), fuse("Lid_cutters", lid_cutters))
+doc.recompute()
+
+# ---------------- Board STEP, for the fit check ----------------
+board_objs = []
+if os.path.exists(BOARD_STEP):
+    try:
+        before = set(o.Name for o in doc.Objects)
+        try:
+            import ImportGui
+            ImportGui.insert(BOARD_STEP, doc.Name)
+        except Exception:
+            import Import
+            Import.insert(BOARD_STEP, doc.Name)
+        board_objs = [o for o in doc.Objects if o.Name not in before and hasattr(o, "Shape")
+                      and not o.Shape.isNull() and o.Shape.Volume > 1e-6 and not o.OutList]
+        App.Console.PrintMessage("Board STEP imported: %d solids\n" % len(board_objs))
+    except Exception as error:
+        App.Console.PrintWarning("Board STEP not imported: %s\n" % error)
+else:
+    App.Console.PrintWarning("Board STEP not found: %s\n" % BOARD_STEP)
+doc.recompute()
+
+# ---------------- Checks ----------------
+s = {alias: sheet.get(alias) for alias, _, _ in PARAMS}
+App.Console.PrintMessage(
+    "Outside size: %.2f x %.2f x %.2f mm (W x D x H)\n" % (s["outer_w"], s["outer_d"], s["outer_h"]))
+screw_len = (s["z_top"] - s["cb_depth"]) + (s["insert_depth"] - 0.5)
+App.Console.PrintMessage(
+    "Screws: 3x M3, at most %.1f mm long under the head (use the next standard length below)\n" % screw_len)
+for part in (base, lid):
+    shape = part.Shape
+    App.Console.PrintMessage("%s: valid=%s, volume %.1f cm3\n" % (part.Label, shape.isValid(), shape.Volume / 1000))
+    for b in board_objs:
+        try:
+            common = shape.common(b.Shape)
+            if common.Volume > 0.01:
+                App.Console.PrintWarning("  overlaps board part %s: %.2f mm3\n" % (b.Label, common.Volume))
+        except Exception:
+            pass
+
+# ---------------- Save and export ----------------
+try:
+    doc.saveAs(os.path.join(OUT_DIR, "HDLCGateway_Enclosure.FCStd"))
+    for part in (base, lid):
+        part.Shape.exportStl(os.path.join(OUT_DIR, part.Label + ".stl"))
+    App.Console.PrintMessage("Saved HDLCGateway_Enclosure.FCStd, Base.stl, Lid.stl in %s\n" % OUT_DIR)
+except Exception as error:
+    App.Console.PrintWarning("Save/export failed: %s\n" % error)
+
+try:
+    import FreeCADGui as Gui
+    for o in board_objs:
+        if o.ViewObject:
+            o.ViewObject.Transparency = 60
+    if lid.ViewObject:
+        lid.ViewObject.Transparency = 50
+    Gui.SendMsgToActiveView("ViewFit")
+    Gui.activeDocument().activeView().viewIsometric()
+except Exception:
+    pass

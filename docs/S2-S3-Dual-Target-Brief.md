@@ -11,6 +11,28 @@ S3 mini schematic V1.0.0 and the firmware sources, on 2026-11-25.
 compatibility with the existing ND interface while supporting both LOLIN modules. S3 Mini is the
 preferred new target; S2 Mini remains supported. USB mass storage is explicitly out of scope.
 
+<!-- contents: written by src/tools/gen_toc.py, do not edit by hand -->
+**Contents**
+
+- [1. Mandatory design constraints](#1-mandatory-design-constraints)
+- [2. Authoritative pin mapping](#2-authoritative-pin-mapping)
+- [3. Reserved and special pins](#3-reserved-and-special-pins)
+- [4. PCB and electrical requirements](#4-pcb-and-electrical-requirements)
+- [5. Firmware target selection](#5-firmware-target-selection)
+- [6. SPI transmission and reception](#6-spi-transmission-and-reception)
+  - [Critical unresolved RX issue](#critical-unresolved-rx-issue)
+- [7. HDLC processing](#7-hdlc-processing)
+- [8. FreeRTOS and Wi-Fi architecture](#8-freertos-and-wi-fi-architecture)
+- [9. Validation and deliverables](#9-validation-and-deliverables)
+- [10. Primary references](#10-primary-references)
+- [Validation against the current design (2026-11-25)](#validation-against-the-current-design-2026-11-25)
+  - [Pin mapping (brief sections 1, 2, 4)](#pin-mapping-brief-sections-1-2-4)
+  - [Electrical (brief section 4)](#electrical-brief-section-4)
+  - [Firmware (brief sections 5 to 8)](#firmware-brief-sections-5-to-8)
+  - [Statements in the brief that disagree with other project documents](#statements-in-the-brief-that-disagree-with-other-project-documents)
+
+<!-- /contents -->
+
 ## 1. Mandatory design constraints
 
 - Maintain one PCB layout and the existing six ND signal connections. Do not relocate signals

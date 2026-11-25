@@ -21,6 +21,12 @@ and this test is how we find out.
 - [7. Test 3 - measure the clock edge (settles assumption A4)](#7-test-3---measure-the-clock-edge-settles-assumption-a4)
 - [8. Results to fill in](#8-results-to-fill-in)
 - [9. Done means: ready for the KiCad layout](#9-done-means-ready-for-the-kicad-layout)
+- [10. Test 4 - MEGALINK card 3023 with busy signals](#10-test-4---megalink-card-3023-with-busy-signals)
+  - [10.1 What changes from the HDLC test](#101-what-changes-from-the-hdlc-test)
+  - [10.2 Checks before anything is powered](#102-checks-before-anything-is-powered)
+  - [10.3 Loop plug, no ND](#103-loop-plug-no-nd)
+  - [10.4 Against the real 3023](#104-against-the-real-3023)
+  - [10.5 Results to fill in](#105-results-to-fill-in)
 - [Related documents](#related-documents)
 
 <!-- /contents -->

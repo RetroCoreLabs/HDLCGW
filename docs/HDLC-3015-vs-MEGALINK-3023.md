@@ -12,6 +12,7 @@ Anything not on those pages is marked "not verified".
 **Contents**
 
 - [Scope decision (Ronny, 2026-11-06)](#scope-decision-ronny-2026-11-06)
+- [Cable facts (Ronny, 2026-11-25, from the ND-107300 and ND-107340 documentation)](#cable-facts-ronny-2026-11-25-from-the-nd-107300-and-nd-107340-documentation)
 - [Short answer](#short-answer)
 - [Side by side](#side-by-side)
 - [Pins whose job changes between the cards](#pins-whose-job-changes-between-the-cards)

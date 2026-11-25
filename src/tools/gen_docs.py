@@ -475,6 +475,12 @@ def main():
         dest = os.path.join(docs, p)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         shutil.copyfile(os.path.join(ROOT, p), dest)
+    # The interactive BOM pages (KiCad InteractiveHtmlBom plugin), copied as they are: each is
+    # one self-contained HTML file and opens at the same path on the site.
+    for p in tracked('docs/ibom/*.html'):
+        dest = os.path.join(docs, p)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copyfile(os.path.join(ROOT, p), dest)
     for f in ('extra.css', 'mermaid-init.js'):
         shutil.copyfile(os.path.join(ROOT, 'src/docs-site', f), os.path.join(docs, 'assets', f))
     # The browser flash page and its manifests. The .bin files are not in git: the docs
